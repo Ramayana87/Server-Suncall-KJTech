@@ -153,8 +153,8 @@ using (TcpClient client = new TcpClient())
     client.EndConnect(result);
     
     // Also set read/write timeouts
-    client.ReceiveTimeout = 120000; // 120 seconds (increased for large datasets)
-    client.SendTimeout = 10000;     // 10 seconds
+    client.ReceiveTimeout = 300000; // 300 seconds (5 minutes for heavy operations)
+    client.SendTimeout = 30000;     // 30 seconds
     
     using (StreamReader reader = new StreamReader(client.GetStream()))
     using (StreamWriter writer = new StreamWriter(client.GetStream()))
@@ -186,8 +186,8 @@ using (TcpClient client = new TcpClient())
 | Type | Duration | Purpose |
 |------|----------|---------|
 | Connection | 5 seconds | Prevent indefinite wait for TCP handshake |
-| Read | 120 seconds | Allow time for server to process large datasets (e.g., ~189K records) |
-| Write | 10 seconds | Prevent stalls on network write operations |
+| Read | 300 seconds | Allow time for processing large datasets, heavy filtering, and JSON serialization |
+| Write | 30 seconds | Prevent stalls on network write operations |
 
 ### ✅ Exception Handling Hierarchy
 

@@ -73,8 +73,8 @@ client.SendTimeout = 10000;     // 10 sec write timeout
 | Type | Duration | Purpose |
 |------|----------|---------|
 | Connection | 5 sec | Initial TCP connection |
-| Read | 120 sec | Waiting for server response (large datasets) |
-| Write | 10 sec | Sending request data |
+| Read | 300 sec | Waiting for server response (large datasets + serialization) |
+| Write | 30 sec | Sending request data |
 
 ---
 
