@@ -38,11 +38,6 @@
             this.label3 = new System.Windows.Forms.Label();
             this.lblStatus = new System.Windows.Forms.Label();
             this.txtLogs = new System.Windows.Forms.TextBox();
-            this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
-            this.backgroundWorker2 = new System.ComponentModel.BackgroundWorker();
-            this.timer1 = new System.Windows.Forms.Timer(this.components);
-            this.txtMSG = new System.Windows.Forms.TextBox();
-            this.btnSend = new System.Windows.Forms.Button();
             this.SFC3KPC1 = new AxSFC3KPCLib.AxSFC3KPC();
             ((System.ComponentModel.ISupportInitialize)(this.SFC3KPC1)).BeginInit();
             this.SuspendLayout();
@@ -99,6 +94,7 @@
             // 
             // btnStop
             // 
+            this.btnStop.Enabled = false;
             this.btnStop.Location = new System.Drawing.Point(111, 105);
             this.btnStop.Name = "btnStop";
             this.btnStop.Size = new System.Drawing.Size(75, 23);
@@ -119,57 +115,30 @@
             // lblStatus
             // 
             this.lblStatus.AutoSize = true;
+            this.lblStatus.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblStatus.ForeColor = System.Drawing.Color.Gray;
             this.lblStatus.Location = new System.Drawing.Point(111, 82);
             this.lblStatus.Name = "lblStatus";
-            this.lblStatus.Size = new System.Drawing.Size(10, 13);
+            this.lblStatus.Size = new System.Drawing.Size(11, 13);
             this.lblStatus.TabIndex = 6;
             this.lblStatus.Text = "-";
             // 
             // txtLogs
             // 
+            this.txtLogs.BackColor = System.Drawing.SystemColors.Window;
             this.txtLogs.Location = new System.Drawing.Point(200, 12);
             this.txtLogs.Multiline = true;
             this.txtLogs.Name = "txtLogs";
+            this.txtLogs.ReadOnly = true;
+            this.txtLogs.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.txtLogs.Size = new System.Drawing.Size(317, 159);
             this.txtLogs.TabIndex = 7;
-            // 
-            // backgroundWorker1
-            // 
-            this.backgroundWorker1.DoWork += new System.ComponentModel.DoWorkEventHandler(this.backgroundWorker1_DoWork);
-            // 
-            // backgroundWorker2
-            // 
-            this.backgroundWorker2.DoWork += new System.ComponentModel.DoWorkEventHandler(this.backgroundWorker2_DoWork);
-            // 
-            // timer1
-            // 
-            this.timer1.Interval = 1000;
-            this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
-            // 
-            // txtMSG
-            // 
-            this.txtMSG.Location = new System.Drawing.Point(30, 134);
-            this.txtMSG.Name = "txtMSG";
-            this.txtMSG.Size = new System.Drawing.Size(156, 20);
-            this.txtMSG.TabIndex = 19;
-            // 
-            // btnSend
-            // 
-            this.btnSend.Location = new System.Drawing.Point(30, 156);
-            this.btnSend.Name = "btnSend";
-            this.btnSend.Size = new System.Drawing.Size(75, 23);
-            this.btnSend.TabIndex = 18;
-            this.btnSend.Text = "Send";
-            this.btnSend.UseVisualStyleBackColor = true;
-            this.btnSend.Click += new System.EventHandler(this.btnSend_Click);
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(529, 183);
-            this.Controls.Add(this.txtMSG);
-            this.Controls.Add(this.btnSend);
             this.Controls.Add(this.txtLogs);
             this.Controls.Add(this.lblStatus);
             this.Controls.Add(this.btnStop);
@@ -180,8 +149,11 @@
             this.Controls.Add(this.label1);
             this.Controls.Add(this.txtIP);
             this.Controls.Add(this.SFC3KPC1);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
+            this.MaximizeBox = false;
             this.Name = "Form1";
-            this.Text = "Server";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            this.Text = "Server - Suncall KJTech";
             this.Load += new System.EventHandler(this.Form1_Load);
             ((System.ComponentModel.ISupportInitialize)(this.SFC3KPC1)).EndInit();
             this.ResumeLayout(false);
@@ -200,11 +172,6 @@
         private System.Windows.Forms.Label label3;
         private System.Windows.Forms.Label lblStatus;
         private System.Windows.Forms.TextBox txtLogs;
-        private System.ComponentModel.BackgroundWorker backgroundWorker1;
-        private System.ComponentModel.BackgroundWorker backgroundWorker2;
-        private System.Windows.Forms.TextBox txtMSG;
-        private System.Windows.Forms.Button btnSend;
-        private System.Windows.Forms.Timer timer1;
         private AxSFC3KPCLib.AxSFC3KPC SFC3KPC1;
     }
 }
