@@ -1,0 +1,3 @@
+@echo off
+echo Starting Test Client...
+Server.exe test
