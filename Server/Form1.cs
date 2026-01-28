@@ -136,14 +136,21 @@ namespace Server
                         ip = ToString(lstParam[1]);
                         port = ParseInt(lstParam[2]);
                     }
-                    //if (lstParam.Count > 4)
-                    //{
-                    //    fromDate = ParseDateTimes(lstParam[3]);
-                    //    toDate = ParseDateTimes(lstParam[4]);
-                    //}
+                    // Parse date range parameters if provided
+                    if (lstParam.Count > 4)
+                    {
+                        fromDate = ParseDateTimes(lstParam[3]);
+                        toDate = ParseDateTimes(lstParam[4]);
+                    }
+                    else
+                    {
+                        // Default: last 30 days to today
+                        fromDate = DateTime.Now.AddDays(-30);
+                        toDate = DateTime.Now;
+                    }
 
                     //send
-                    List<GLogData> table = getData(machineNumber, ip, port);
+                    List<GLogData> table = getData(machineNumber, ip, port, fromDate, toDate);
                     var jsonData = JsonConvert.SerializeObject(table);
                     STW.WriteLine(jsonData);
                     STW.WriteLine("EXIT");
@@ -275,7 +282,7 @@ namespace Server
             }
         }
 
-        private List<GLogData> getData(int machineNumber, string ip, int port)
+        private List<GLogData> getData(int machineNumber, string ip, int port, DateTime fromDate, DateTime toDate)
         {
             try
             {
@@ -295,6 +302,13 @@ namespace Server
                     {
                         Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Getting...");
                         i = 1;
+                        int skippedCount = 0;
+                        int totalProcessed = 0;
+                        
+                        // Pre-calculate year range for faster filtering
+                        int minYear = fromDate.Year;
+                        int maxYear = toDate.Year;
+                        
                         while (true)
                         {
                             GLogData data = new GLogData();
@@ -307,17 +321,48 @@ namespace Server
                                 ref data.vSensor,
                                 ref data.vYear, ref data.vMonth, ref data.vDay, ref data.vHour, ref data.vMinute, ref data.vSecond);
                             if (!bRet) break;
-                            DateTime inputDate = ParseDateTimes(data.Time);
-                            if (data.EnrollNumber <= 0 || data.vGranted != 1 || data.vYear < 2024)
+                            
+                            totalProcessed++;
+                            
+                            // Fast validation checks - fail fast
+                            if (data.vEnrollNumber <= 0 || data.vGranted != 1)
                             {
+                                skippedCount++;
                                 continue;
                             }
-
-                            data.no = i;
-                            lstData.Add(data);
-                            i = i + 1;
+                            
+                            // Year range check - quick filter before creating DateTime
+                            if (data.vYear < minYear || data.vYear > maxYear || data.vYear < 2024)
+                            {
+                                skippedCount++;
+                                continue;
+                            }
+                            
+                            // Create DateTime only for records that passed initial filters
+                            try
+                            {
+                                DateTime inputDate = new DateTime(data.vYear, data.vMonth, data.vDay, data.vHour, data.vMinute, data.vSecond & 0xFF);
+                                
+                                // Date range filtering
+                                if (inputDate < fromDate || inputDate > toDate)
+                                {
+                                    skippedCount++;
+                                    continue;
+                                }
+                                
+                                data.no = i;
+                                lstData.Add(data);
+                                i++;
+                            }
+                            catch (ArgumentOutOfRangeException)
+                            {
+                                // Invalid date, skip this record
+                                skippedCount++;
+                                continue;
+                            }
                         }
-                        Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Read GLogData OK");
+                        Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), 
+                            $"Read GLogData OK - Total: {totalProcessed}, Filtered: {lstData.Count}, Skipped: {skippedCount}");
                     }
                     SFC3KPC1.Disconnect(machineNumber);
                 }
