@@ -500,10 +500,20 @@ namespace Server
                             txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Server response (mockup data):{Environment.NewLine}");
                             txtLog.AppendText($"  - Records received: {data.Count:N0}{Environment.NewLine}");
                             txtLog.AppendText($"  - Total time: {stopwatch.ElapsedMilliseconds}ms{Environment.NewLine}");
-                            txtLog.AppendText($"  - Data size: {response.Length / 1024:N0} KB{Environment.NewLine}{Environment.NewLine}");
-
-                            lblStatus.Text = $"Received {data.Count:N0} mockup records in {stopwatch.ElapsedMilliseconds}ms";
-                            lblStatus.ForeColor = Color.Green;
+                            txtLog.AppendText($"  - Data size: {response.Length / 1024:N0} KB{Environment.NewLine}");
+                            
+                            if (data.Count == 0)
+                            {
+                                txtLog.AppendText($"  - WARNING: No records returned. Check machine number (available: 5, 6, 7, 8){Environment.NewLine}{Environment.NewLine}");
+                                lblStatus.Text = "No records received - check machine number";
+                                lblStatus.ForeColor = Color.Orange;
+                            }
+                            else
+                            {
+                                txtLog.AppendText($"{Environment.NewLine}");
+                                lblStatus.Text = $"Received {data.Count:N0} mockup records in {stopwatch.ElapsedMilliseconds}ms";
+                                lblStatus.ForeColor = Color.Green;
+                            }
 
                             // Save response to log file
                             try

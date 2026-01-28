@@ -196,43 +196,69 @@ namespace Server
                         }
                         else if (operation == "MOCKUP_GETUSERS")
                         {
-                            // Get distinct users from mockup data file
-                            List<GLogData> users = GetMockupDistinctUsers(machineNumber);
-                            stopwatch.Stop();
+                            try
+                            {
+                                // Get distinct users from mockup data file
+                                List<GLogData> users = GetMockupDistinctUsers(machineNumber);
+                                stopwatch.Stop();
 
-                            string jsonData = JsonConvert.SerializeObject(users);
-                            writer.WriteLine(jsonData);
-                            writer.WriteLine("EXIT");
+                                string jsonData = JsonConvert.SerializeObject(users);
+                                writer.WriteLine(jsonData);
+                                writer.WriteLine("EXIT");
 
-                            AppendLog($"[MOCKUP_GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                                AppendLog($"[MOCKUP_GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                            }
+                            catch (Exception ex)
+                            {
+                                stopwatch.Stop();
+                                Logging.Write(Logging.ERROR, "MOCKUP_GETUSERS", ex.Message);
+                                AppendLog($"[MOCKUP_GETUSERS] Error: {ex.Message}");
+                                
+                                // Send empty result to prevent client timeout
+                                writer.WriteLine("[]");
+                                writer.WriteLine("EXIT");
+                            }
                         }
                         else if (operation == "MOCKUP_GETLOGS")
                         {
-                            // Optional date filtering parameters
-                            DateTime? fromDate = null;
-                            DateTime? toDate = null;
-
-                            if (parameters.Count >= 4 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[3 + paramOffset])))
+                            try
                             {
-                                if (DateTime.TryParse(parameters[3 + paramOffset], out DateTime parsedFrom))
-                                    fromDate = parsedFrom;
-                            }
+                                // Optional date filtering parameters
+                                DateTime? fromDate = null;
+                                DateTime? toDate = null;
 
-                            if (parameters.Count >= 5 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[4 + paramOffset])))
+                                if (parameters.Count >= 4 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[3 + paramOffset])))
+                                {
+                                    if (DateTime.TryParse(parameters[3 + paramOffset], out DateTime parsedFrom))
+                                        fromDate = parsedFrom;
+                                }
+
+                                if (parameters.Count >= 5 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[4 + paramOffset])))
+                                {
+                                    if (DateTime.TryParse(parameters[4 + paramOffset], out DateTime parsedTo))
+                                        toDate = parsedTo;
+                                }
+
+                                List<GLogData> logData = GetMockupAttendanceData(machineNumber, fromDate, toDate);
+                                stopwatch.Stop();
+
+                                string jsonData = JsonConvert.SerializeObject(logData);
+
+                                writer.WriteLine(jsonData);
+                                writer.WriteLine("EXIT");
+
+                                AppendLog($"[MOCKUP_GETLOGS] Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
+                            }
+                            catch (Exception ex)
                             {
-                                if (DateTime.TryParse(parameters[4 + paramOffset], out DateTime parsedTo))
-                                    toDate = parsedTo;
+                                stopwatch.Stop();
+                                Logging.Write(Logging.ERROR, "MOCKUP_GETLOGS", ex.Message);
+                                AppendLog($"[MOCKUP_GETLOGS] Error: {ex.Message}");
+                                
+                                // Send empty result to prevent client timeout
+                                writer.WriteLine("[]");
+                                writer.WriteLine("EXIT");
                             }
-
-                            List<GLogData> logData = GetMockupAttendanceData(machineNumber, fromDate, toDate);
-                            stopwatch.Stop();
-
-                            string jsonData = JsonConvert.SerializeObject(logData);
-
-                            writer.WriteLine(jsonData);
-                            writer.WriteLine("EXIT");
-
-                            AppendLog($"[MOCKUP_GETLOGS] Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
                         }
                         else // GETLOGS
                         {
@@ -543,7 +569,8 @@ namespace Server
 
                 if (!File.Exists(filePath))
                 {
-                    Logging.Write(Logging.ERROR, "GetMockupAttendanceData", $"Mockup file not found: {fileName}");
+                    Logging.Write(Logging.ERROR, "GetMockupAttendanceData", $"Mockup file not found: {fileName}. Available machines: 5, 6, 7, 8");
+                    AppendLog($"Mockup file not found: {fileName}. Available machines: 5, 6, 7, 8");
                     return logDataList;
                 }
 
@@ -685,7 +712,8 @@ namespace Server
 
                 if (!File.Exists(filePath))
                 {
-                    Logging.Write(Logging.ERROR, "GetMockupDistinctUsers", $"Mockup file not found: {fileName}");
+                    Logging.Write(Logging.ERROR, "GetMockupDistinctUsers", $"Mockup file not found: {fileName}. Available machines: 5, 6, 7, 8");
+                    AppendLog($"Mockup file not found: {fileName}. Available machines: 5, 6, 7, 8");
                     return userList;
                 }
 

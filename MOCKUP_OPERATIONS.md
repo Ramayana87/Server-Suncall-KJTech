@@ -59,10 +59,12 @@ may {machineNumber}.txt
 ```
 
 **Available Files:**
-- may 5.txt
-- may 6.txt
-- may 7.txt
-- may 8.txt
+- may 5.txt (14 MB, ~189,000 records)
+- may 6.txt (12 MB, ~170,000 records)
+- may 7.txt (9.4 MB, ~133,000 records)
+- may 8.txt (13 MB, ~177,000 records)
+
+**Important:** Only machine numbers 5, 6, 7, and 8 have mockup data available. Requesting other machine numbers will return an empty result.
 
 **File Format:**
 Tab-separated values with the following columns:
