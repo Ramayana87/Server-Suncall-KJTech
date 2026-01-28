@@ -17,6 +17,8 @@ namespace Server
         private const int MAX_CONNECTION = 10;
         private bool statusOpen = true;
         private TcpListener listener;
+        private readonly object lockObject = new object();
+        private int activeConnections = 0;
 
         public Form1()
         {
@@ -74,7 +76,7 @@ namespace Server
             }
         }
 
-        private async void btnStart_ClickAsync(object sender, EventArgs e)
+        private async Task btnStart_ClickAsync(object sender, EventArgs e)
         {
             try
             {
@@ -85,7 +87,10 @@ namespace Server
                     return;
                 }
 
-                statusOpen = true;
+                lock (lockObject)
+                {
+                    statusOpen = true;
+                }
                 UpdateStatus("Starting...", Color.Orange);
                 btnStart.Enabled = false;
                 btnStop.Enabled = true;
@@ -96,14 +101,35 @@ namespace Server
                 UpdateStatus("Running", Color.Green);
                 AppendLog("Server started successfully");
 
-                while (statusOpen)
+                bool shouldRun;
+                lock (lockObject)
+                {
+                    shouldRun = statusOpen;
+                }
+
+                while (shouldRun)
                 {
                     var client = await listener.AcceptTcpClientAsync();
-                    Thread t = new Thread(() => HandleClient(client))
+                    
+                    // Check connection limit
+                    int currentConnections = Interlocked.Increment(ref activeConnections);
+                    if (currentConnections > MAX_CONNECTION)
                     {
-                        IsBackground = true
-                    };
-                    t.Start();
+                        Interlocked.Decrement(ref activeConnections);
+                        AppendLog($"Connection rejected: maximum connections ({MAX_CONNECTION}) reached");
+                        client?.Close();
+                        client?.Dispose();
+                    }
+                    else
+                    {
+                        // Use thread pool for better performance
+                        _ = System.Threading.Tasks.Task.Run(() => HandleClient(client));
+                    }
+                    
+                    lock (lockObject)
+                    {
+                        shouldRun = statusOpen;
+                    }
                 }
             }
             catch (ObjectDisposedException)
@@ -115,7 +141,7 @@ namespace Server
             {
                 UpdateStatus("Error", Color.Red);
                 AppendLog($"Server error: {ex.Message}");
-                Logging.Write(Logging.ERROR, "btnStart_ClickAsync", ex.Message);
+                Logging.Write(Logging.ERROR, "btnStart_ClickAsync", ex.ToString());
             }
             finally
             {
@@ -126,7 +152,13 @@ namespace Server
                 }
                 
                 // Only reset buttons if we're actually stopping
-                if (!statusOpen)
+                bool isStopping;
+                lock (lockObject)
+                {
+                    isStopping = !statusOpen;
+                }
+                
+                if (isStopping)
                 {
                     UpdateStatus("Stopped", Color.Gray);
                     btnStart.Enabled = true;
@@ -137,78 +169,104 @@ namespace Server
 
         private void HandleClient(TcpClient client)
         {
-            StreamReader reader = null;
-            StreamWriter writer = null;
-
             try
             {
-                reader = new StreamReader(client.GetStream());
-                writer = new StreamWriter(client.GetStream()) { AutoFlush = true };
-
-                while (client.Connected)
+                using (client)
+                using (var stream = client.GetStream())
+                using (var reader = new StreamReader(stream))
+                using (var writer = new StreamWriter(stream) { AutoFlush = true })
                 {
-                    string received = reader.ReadLine();
-                    
-                    if (string.IsNullOrEmpty(received) || received.Equals("EXIT", StringComparison.OrdinalIgnoreCase))
+                    while (client.Connected)
                     {
-                        break;
-                    }
-
-                    AppendLog($"Received: {received}");
-                    UpdateStatus("Connected", Color.Green);
-
-                    var parameters = received.Split('|').ToList();
-                    if (parameters.Count >= 3)
-                    {
-                        int machineNumber = ParseInt(parameters[0]);
-                        string ip = SafeToString(parameters[1]);
-                        int port = ParseInt(parameters[2]);
+                        string received = reader.ReadLine();
                         
-                        // Optional date filtering parameters
-                        DateTime? fromDate = null;
-                        DateTime? toDate = null;
-                        
-                        if (parameters.Count >= 4 && !string.IsNullOrEmpty(SafeToString(parameters[3])))
+                        if (string.IsNullOrEmpty(received) || received.Equals("EXIT", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (DateTime.TryParse(parameters[3], out DateTime parsedFrom))
-                                fromDate = parsedFrom;
-                        }
-                        
-                        if (parameters.Count >= 5 && !string.IsNullOrEmpty(SafeToString(parameters[4])))
-                        {
-                            if (DateTime.TryParse(parameters[4], out DateTime parsedTo))
-                                toDate = parsedTo;
+                            break;
                         }
 
-                        var stopwatch = Stopwatch.StartNew();
-                        List<GLogData> logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
-                        stopwatch.Stop();
-                        
-                        string jsonData = JsonConvert.SerializeObject(logData);
-                        
-                        writer.WriteLine(jsonData);
-                        writer.WriteLine("EXIT");
+                        AppendLog($"Received: {received}");
+                        UpdateStatus("Connected", Color.Green);
 
-                        AppendLog($"Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
-                    }
-                    else
-                    {
-                        AppendLog("Invalid request format");
-                        writer.WriteLine("ERROR: Invalid format");
-                        writer.WriteLine("EXIT");
+                        var parameters = received.Split('|');
+                        if (parameters.Length >= 3)
+                        {
+                            int machineNumber = ParseInt(parameters[0]);
+                            string ip = SafeToString(parameters[1]);
+                            int port = ParseInt(parameters[2]);
+                            
+                            // Validate IP address
+                            if (!IPAddress.TryParse(ip, out IPAddress validatedIP))
+                            {
+                                AppendLog($"Invalid IP address: {ip}");
+                                writer.WriteLine("ERROR: Invalid IP address format");
+                                writer.WriteLine("EXIT");
+                                continue;
+                            }
+                            
+                            // Validate port range
+                            if (port <= 0 || port > 65535)
+                            {
+                                AppendLog($"Invalid port: {port}");
+                                writer.WriteLine("ERROR: Invalid port number (must be 1-65535)");
+                                writer.WriteLine("EXIT");
+                                continue;
+                            }
+                            
+                            // Validate machine number
+                            if (machineNumber < 0)
+                            {
+                                AppendLog($"Invalid machine number: {machineNumber}");
+                                writer.WriteLine("ERROR: Invalid machine number");
+                                writer.WriteLine("EXIT");
+                                continue;
+                            }
+                            
+                            // Optional date filtering parameters
+                            DateTime? fromDate = null;
+                            DateTime? toDate = null;
+                            
+                            if (parameters.Length >= 4 && !string.IsNullOrEmpty(SafeToString(parameters[3])))
+                            {
+                                if (DateTime.TryParse(parameters[3], out DateTime parsedFrom))
+                                    fromDate = parsedFrom;
+                            }
+                            
+                            if (parameters.Length >= 5 && !string.IsNullOrEmpty(SafeToString(parameters[4])))
+                            {
+                                if (DateTime.TryParse(parameters[4], out DateTime parsedTo))
+                                    toDate = parsedTo;
+                            }
+
+                            var stopwatch = Stopwatch.StartNew();
+                            List<GLogData> logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
+                            stopwatch.Stop();
+                            
+                            string jsonData = JsonConvert.SerializeObject(logData);
+                            
+                            writer.WriteLine(jsonData);
+                            writer.WriteLine("EXIT");
+
+                            AppendLog($"Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
+                        }
+                        else
+                        {
+                            AppendLog("Invalid request format");
+                            writer.WriteLine("ERROR: Invalid format");
+                            writer.WriteLine("EXIT");
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Logging.Write(Logging.ERROR, "HandleClient", ex.Message);
+                Logging.Write(Logging.ERROR, "HandleClient", ex.ToString());
                 AppendLog($"Client error: {ex.Message}");
             }
             finally
             {
-                reader?.Close();
-                writer?.Close();
-                client?.Close();
+                // Decrement active connection count
+                Interlocked.Decrement(ref activeConnections);
             }
         }
 
@@ -216,7 +274,10 @@ namespace Server
         {
             try
             {
-                statusOpen = false;
+                lock (lockObject)
+                {
+                    statusOpen = false;
+                }
                 
                 if (listener != null)
                 {
@@ -233,7 +294,7 @@ namespace Server
             {
                 UpdateStatus("Error", Color.Red);
                 AppendLog($"Stop error: {ex.Message}");
-                Logging.Write(Logging.ERROR, "btnStop_Click", ex.Message);
+                Logging.Write(Logging.ERROR, "btnStop_Click", ex.ToString());
             }
         }
 
@@ -272,14 +333,16 @@ namespace Server
         private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
         {
             List<GLogData> logDataList = new List<GLogData>();
+            bool connected = false;
 
             try
             {
                 if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
                 {
-                    Logging.Write(Logging.ERROR, "GetAttendanceData", "Failed to connect to device");
+                    Logging.Write(Logging.ERROR, "GetAttendanceData", $"Failed to connect to device at {ip}:{port}");
                     return logDataList;
                 }
+                connected = true;
 
                 bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
                 Logging.Write(Logging.WATCH, "GetAttendanceData", $"Start reading: {GetErrorString()}");
@@ -294,7 +357,11 @@ namespace Server
                     int filteredRecords = 0;
                     int invalidRecords = 0;
                     
-                    while (true)
+                    // Add timeout protection to prevent infinite loop
+                    var timeout = Stopwatch.StartNew();
+                    const int TIMEOUT_MS = 120000; // 2 minutes timeout
+                    
+                    while (timeout.ElapsedMilliseconds < TIMEOUT_MS)
                     {
                         GLogData data = new GLogData();
                         success = SFC3KPC1.GetGeneralLogData(machineNumber,
@@ -303,13 +370,19 @@ namespace Server
                             ref data.vYear, ref data.vMonth, ref data.vDay,
                             ref data.vHour, ref data.vMinute, ref data.vSecond);
 
-                        if (!success) break;
+                        if (!success) 
+                        {
+                            Logging.Write(Logging.WATCH, "GetAttendanceData", "Finished reading all records");
+                            break;
+                        }
                         
                         totalRecords++;
 
-                        // Filter invalid records (validate year is reasonable)
+                        // Filter invalid records (validate year, month, day are reasonable)
                         if (data.EnrollNumber <= 0 || data.vGranted != 1 || 
-                            data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                            data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1 ||
+                            data.vMonth < 1 || data.vMonth > 12 ||
+                            data.vDay < 1 || data.vDay > 31)
                         {
                             invalidRecords++;
                             continue;
@@ -339,7 +412,7 @@ namespace Server
                                     continue;
                                 }
                             }
-                            catch (Exception ex)
+                            catch (ArgumentOutOfRangeException ex)
                             {
                                 // Skip records with invalid dates
                                 Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
@@ -351,6 +424,11 @@ namespace Server
                         data.no = recordNumber++;
                         logDataList.Add(data);
                     }
+                    
+                    if (timeout.ElapsedMilliseconds >= TIMEOUT_MS)
+                    {
+                        Logging.Write(Logging.ERROR, "GetAttendanceData", $"Timeout reached after {timeout.ElapsedMilliseconds}ms, {totalRecords} records processed");
+                    }
 
                     string filterInfo = (fromDate.HasValue || toDate.HasValue) 
                         ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
@@ -358,12 +436,26 @@ namespace Server
                     Logging.Write(Logging.WATCH, "GetAttendanceData", 
                         $"Successfully read {logDataList.Count} records{filterInfo}");
                 }
-
-                SFC3KPC1.Disconnect(machineNumber);
             }
             catch (Exception ex)
             {
-                Logging.Write(Logging.ERROR, "GetAttendanceData", ex.Message);
+                Logging.Write(Logging.ERROR, "GetAttendanceData", ex.ToString());
+            }
+            finally
+            {
+                // Always disconnect to release device resources
+                if (connected)
+                {
+                    try
+                    {
+                        SFC3KPC1.Disconnect(machineNumber);
+                        Logging.Write(Logging.WATCH, "GetAttendanceData", "Device disconnected");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logging.Write(Logging.ERROR, "GetAttendanceData", $"Error during disconnect: {ex.Message}");
+                    }
+                }
             }
 
             return logDataList;
