@@ -1,42 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Net;
 using System.Net.Sockets;
 using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
-using System.Runtime.Serialization;
 using Newtonsoft.Json;
 using System.Diagnostics;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.StartPanel;
 using System.Threading;
-using System.Xml.Linq;
 
 namespace Server
 {
     public partial class Form1 : Form
     {
-        private TcpClient client;
-        public StreamReader STR;
-        public StreamWriter STW;
-        public string recieve;
-        public String TextToSend;
-        private Socket sock = null;
-        const int MAX_CONNECTION = 10;
-        static int _connectionsCount = 0;
-        bool statusOpen = true;
-        TcpListener listener;
-        int machineNumber;
-        string ip;
-        int port;
-        DateTime fromDate;
-        DateTime toDate;
+        private const int MAX_CONNECTION = 10;
+        private bool statusOpen = true;
+        private TcpListener listener;
+
         public Form1()
         {
             InitializeComponent();
@@ -47,6 +28,7 @@ namespace Server
                 if (address.AddressFamily == AddressFamily.InterNetwork)
                 {
                     txtIP.Text = address.ToString();
+                    break;
                 }
             }
         }
@@ -56,14 +38,12 @@ namespace Server
             try
             {
                 txtPort.Text = "9999";
-            }
-            catch (AxHost.InvalidActiveXStateException ex)
-            {
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
+                UpdateStatus("Ready", Color.Gray);
             }
             catch (Exception ex)
             {
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
+                Logging.Write(Logging.ERROR, "Form1_Load", ex.Message);
+                UpdateStatus("Error", Color.Red);
             }
         }
 
@@ -71,130 +51,118 @@ namespace Server
         {
             try
             {
+                if (!int.TryParse(txtPort.Text, out int portNumber) || portNumber <= 0 || portNumber > 65535)
+                {
+                    MessageBox.Show("Please enter a valid port number (1-65535)", "Invalid Port", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 statusOpen = true;
-                lblStatus.Text = "starting";
-                listener = new TcpListener(IPAddress.Any, int.Parse(txtPort.Text));
+                UpdateStatus("Starting...", Color.Orange);
+                btnStart.Enabled = false;
+                btnStop.Enabled = true;
+
+                listener = new TcpListener(IPAddress.Any, portNumber);
                 listener.Start();
-                //cách 1
+
+                UpdateStatus("Running", Color.Green);
+                AppendLog("Server started successfully");
+
                 while (statusOpen)
                 {
                     var client = await listener.AcceptTcpClientAsync();
-                    Thread t = new Thread((obj) =>
+                    Thread t = new Thread(() => HandleClient(client))
                     {
-                        DoWork(client);
-                    });
-                    t.Start(client);
+                        IsBackground = true
+                    };
+                    t.Start();
                 }
-
-                // cách 2
-                //while (_connectionsCount < MAX_CONNECTION || MAX_CONNECTION == 0)
-                //{
-                //    _connectionsCount++;
-
-                //    new Thread(DoWork2).Start();
-                //}
-
-                listener.Stop();
-                txtLogs.Text += "Server disConnected\n";
+            }
+            catch (ObjectDisposedException)
+            {
+                // Expected when listener is stopped intentionally
+                AppendLog("Server stopped");
             }
             catch (Exception ex)
             {
-                lblStatus.Text = "Error";
-                txtLogs.Text += "Server could not connect\n>>>" + ex.Message.ToString() + "\n";
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
+                UpdateStatus("Error", Color.Red);
+                AppendLog($"Server error: {ex.Message}");
+                Logging.Write(Logging.ERROR, "btnStart_ClickAsync", ex.Message);
             }
-
-
-        }
-
-        public void DoWork(TcpClient client)
-        {
-            try
+            finally
             {
-
-                var STR = new StreamReader(client.GetStream());
-                var STW = new StreamWriter(client.GetStream());
-                STW.AutoFlush = true;
-
-                while (client.Connected)
+                if (listener != null)
                 {
-                    //receive
-                    recieve = STR.ReadLine();
-                    if (string.IsNullOrEmpty(recieve) || recieve.ToUpper() == "EXIT")
-                    {
-                        break;
-                    }
-                    this.txtLogs.Invoke(new MethodInvoker(delegate ()
-                    {
-                        txtLogs.Text += "\n" + recieve + "\t";
-                        lblStatus.Text = "connected";
-                    }));
-                    var lstParam = recieve.Split('|').ToList();
-                    if (lstParam.Count > 2)
-                    {
-                        machineNumber = ParseInt(lstParam[0]);
-                        ip = ToString(lstParam[1]);
-                        port = ParseInt(lstParam[2]);
-                    }
-                    //if (lstParam.Count > 4)
-                    //{
-                    //    fromDate = ParseDateTimes(lstParam[3]);
-                    //    toDate = ParseDateTimes(lstParam[4]);
-                    //}
-
-                    //send
-                    List<GLogData> table = getData(machineNumber, ip, port);
-                    var jsonData = JsonConvert.SerializeObject(table);
-                    STW.WriteLine(jsonData);
-                    STW.WriteLine("EXIT");
-                    recieve = "";
+                    listener.Stop();
+                    listener = null;
                 }
-                STW.Close();
-                STR.Close();
-                client.Close();
-            }
-            catch (Exception ex)
-            {
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
+                
+                // Only reset buttons if we're actually stopping
+                if (!statusOpen)
+                {
+                    UpdateStatus("Stopped", Color.Gray);
+                    btnStart.Enabled = true;
+                    btnStop.Enabled = false;
+                }
             }
         }
 
-        public async void DoWork2()
+        private void HandleClient(TcpClient client)
         {
+            StreamReader reader = null;
+            StreamWriter writer = null;
+
             try
             {
-                var client = await listener.AcceptTcpClientAsync();
-                var STR = new StreamReader(client.GetStream());
-                var STW = new StreamWriter(client.GetStream());
-                STW.AutoFlush = true;
+                reader = new StreamReader(client.GetStream());
+                writer = new StreamWriter(client.GetStream()) { AutoFlush = true };
 
                 while (client.Connected)
                 {
-                    recieve = STR.ReadLine();
-                    if (recieve.ToUpper() == "EXIT")
+                    string received = reader.ReadLine();
+                    
+                    if (string.IsNullOrEmpty(received) || received.Equals("EXIT", StringComparison.OrdinalIgnoreCase))
                     {
                         break;
                     }
-                    this.txtLogs.Invoke(new MethodInvoker(delegate ()
-                    {
-                        txtLogs.AppendText("You:" + recieve + "\n");
-                        lblStatus.Text = "connected";
-                    }));
-                    recieve = "";
 
-                    //send
-                    //DataTable table = getData();
-                    //var jsonData = JsonConvert.SerializeObject(table);
-                    //STW.WriteLine(jsonData);
-                    STW.WriteLine("EXIT");
+                    AppendLog($"Received: {received}");
+                    UpdateStatus("Connected", Color.Green);
+
+                    var parameters = received.Split('|').ToList();
+                    if (parameters.Count >= 3)
+                    {
+                        int machineNumber = ParseInt(parameters[0]);
+                        string ip = SafeToString(parameters[1]);
+                        int port = ParseInt(parameters[2]);
+
+                        List<GLogData> logData = GetAttendanceData(machineNumber, ip, port);
+                        string jsonData = JsonConvert.SerializeObject(logData);
+                        
+                        writer.WriteLine(jsonData);
+                        writer.WriteLine("EXIT");
+
+                        AppendLog($"Sent {logData.Count} records");
+                    }
+                    else
+                    {
+                        AppendLog("Invalid request format");
+                        writer.WriteLine("ERROR: Invalid format");
+                        writer.WriteLine("EXIT");
+                    }
                 }
-                STW.Close();
-                STR.Close();
-                client.Close();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message);
+                Logging.Write(Logging.ERROR, "HandleClient", ex.Message);
+                AppendLog($"Client error: {ex.Message}");
+            }
+            finally
+            {
+                reader?.Close();
+                writer?.Close();
+                client?.Close();
             }
         }
 
@@ -203,181 +171,125 @@ namespace Server
             try
             {
                 statusOpen = false;
-                //TcpListener listener = new TcpListener(IPAddress.Any, int.Parse(txtPort.Text));
-                //listener.Stop();
-                //client = listener.AcceptTcpClient();
-                //STR = new StreamReader(client.GetStream());
-                //STW = new StreamWriter(client.GetStream());
-                //STW.AutoFlush = false;
-
-                //backgroundWorker1.CancelAsync();
-                //backgroundWorker2.WorkerSupportsCancellation = false;
-                //txtLogs.Text += "Server disConnected\n";
+                
+                if (listener != null)
+                {
+                    listener.Stop();
+                    listener = null;
+                }
+                
+                UpdateStatus("Stopped", Color.Gray);
+                AppendLog("Server stopped by user");
+                btnStart.Enabled = true;
+                btnStop.Enabled = false;
             }
             catch (Exception ex)
             {
-                lblStatus.Text = "Error";
-                txtLogs.Text += "Server could not disconnect\n>>>" + ex.Message.ToString() + "\n";
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
+                UpdateStatus("Error", Color.Red);
+                AppendLog($"Stop error: {ex.Message}");
+                Logging.Write(Logging.ERROR, "btnStop_Click", ex.Message);
             }
         }
 
-        private void timer1_Tick(object sender, EventArgs e)
+        private void UpdateStatus(string status, Color color)
         {
-            backgroundWorker2.RunWorkerAsync();
-            backgroundWorker2.WorkerSupportsCancellation = true;
-        }
-
-        private void btnSend_Click(object sender, EventArgs e)
-        {
-
-            if (txtMSG.Text != "")
+            if (lblStatus.InvokeRequired)
             {
-                TextToSend = txtMSG.Text;
-                backgroundWorker2.RunWorkerAsync();
-            }
-            txtMSG.Text = "";
-        }
-
-        private void backgroundWorker2_DoWork(object sender, DoWorkEventArgs e)
-        {
-            if (client.Connected)
-            {
-                STW.WriteLine(TextToSend);
-                this.txtLogs.Invoke(new MethodInvoker(delegate ()
+                lblStatus.Invoke(new Action(() =>
                 {
-                    txtLogs.AppendText("Me:" + TextToSend + "\n");
-                    lblStatus.Text = "connected - sent";
+                    lblStatus.Text = status;
+                    lblStatus.ForeColor = color;
                 }));
             }
-            //backgroundWorker2.CancelAsync();
-        }
-        private void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
-        {
-            while (client.Connected)
+            else
             {
-                try
-                {
-                    recieve = STR.ReadLine();
-                    this.txtLogs.Invoke(new MethodInvoker(delegate ()
-                    {
-                        txtLogs.AppendText("You:" + recieve + "\n");
-                        lblStatus.Text = "connected";
-                    }));
-                    recieve = "";
-
-                }
-                catch (Exception ex)
-                {
-                    lblStatus.Text = "Error";
-                    txtLogs.Text += "Server could not connect\n>>>" + ex.Message.ToString() + "\n";
-                }
+                lblStatus.Text = status;
+                lblStatus.ForeColor = color;
             }
         }
 
-        private List<GLogData> getData(int machineNumber, string ip, int port)
+        private void AppendLog(string message)
         {
+            if (txtLogs.InvokeRequired)
+            {
+                txtLogs.Invoke(new Action(() =>
+                {
+                    txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                }));
+            }
+            else
+            {
+                txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+            }
+        }
+
+        private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port)
+        {
+            List<GLogData> logDataList = new List<GLogData>();
+
             try
             {
-                List<GLogData> lstData = new List<GLogData>();
-                if (SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
+                if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
                 {
-                    bool bRet;
-                    int i;
-
-                    bRet = SFC3KPC1.StartReadGeneralLogData(machineNumber);
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), GetErrorString());
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Reading...");
-
-                    bRet = SFC3KPC1.ReadGeneralLogData(machineNumber);
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), GetErrorString());
-                    if (bRet)
-                    {
-                        Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Getting...");
-                        i = 1;
-                        while (true)
-                        {
-                            GLogData data = new GLogData();
-                            bRet = SFC3KPC1.GetGeneralLogData(machineNumber,
-                                ref data.vEnrollNumber,
-                                ref data.vGranted,
-                                ref data.vMethod,
-                                ref data.vDoorMode,
-                                ref data.vFunNumber,
-                                ref data.vSensor,
-                                ref data.vYear, ref data.vMonth, ref data.vDay, ref data.vHour, ref data.vMinute, ref data.vSecond);
-                            if (!bRet) break;
-                            DateTime inputDate = ParseDateTimes(data.Time);
-                            if (data.EnrollNumber <= 0 || data.vGranted != 1 || data.vYear < 2024)
-                            {
-                                continue;
-                            }
-
-                            data.no = i;
-                            lstData.Add(data);
-                            i = i + 1;
-                        }
-                        Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Read GLogData OK");
-                    }
-                    SFC3KPC1.Disconnect(machineNumber);
+                    Logging.Write(Logging.ERROR, "GetAttendanceData", "Failed to connect to device");
+                    return logDataList;
                 }
-                return lstData;
+
+                bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
+                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Start reading: {GetErrorString()}");
+
+                success = SFC3KPC1.ReadGeneralLogData(machineNumber);
+                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Read result: {GetErrorString()}");
+
+                if (success)
+                {
+                    int recordNumber = 1;
+                    while (true)
+                    {
+                        GLogData data = new GLogData();
+                        success = SFC3KPC1.GetGeneralLogData(machineNumber,
+                            ref data.vEnrollNumber, ref data.vGranted, ref data.vMethod,
+                            ref data.vDoorMode, ref data.vFunNumber, ref data.vSensor,
+                            ref data.vYear, ref data.vMonth, ref data.vDay,
+                            ref data.vHour, ref data.vMinute, ref data.vSecond);
+
+                        if (!success) break;
+
+                        // Filter invalid records (validate year is reasonable)
+                        if (data.EnrollNumber <= 0 || data.vGranted != 1 || 
+                            data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                        {
+                            continue;
+                        }
+
+                        data.no = recordNumber++;
+                        logDataList.Add(data);
+                    }
+
+                    Logging.Write(Logging.WATCH, "GetAttendanceData", $"Successfully read {logDataList.Count} records");
+                }
+
+                SFC3KPC1.Disconnect(machineNumber);
             }
             catch (Exception ex)
             {
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
-                return new List<GLogData>();
+                Logging.Write(Logging.ERROR, "GetAttendanceData", ex.Message);
             }
+
+            return logDataList;
         }
 
-        public static DateTime ParseDateTimes(object obj)
+        public static string SafeToString(object obj)
         {
-            if (obj is DateTime d) return d;
-
-            try
-            {
-                if (obj == null) return DateTime.Now;
-                if (obj != null && Convert.ToDateTime(obj) == DateTime.MinValue) return DateTime.Now;
-                if (obj != null && DateTime.Parse(obj.ToString()).Year == 1899) return DateTime.Now;
-                if (obj != null && DateTime.Parse(obj.ToString()).Year == 1900) return DateTime.Now;
-                if (DateTime.TryParse(obj.ToString(), out DateTime result))
-                    return result;
-                return DateTime.Now;
-            }
-            catch (Exception)
-            {
-                return DateTime.Now;
-            }
-        }
-
-        public static string ToString(object obj)
-        {
-            try
-            {
-                if (obj == null) return string.Empty;
-                return obj.ToString().Trim();
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
+            return obj?.ToString()?.Trim() ?? string.Empty;
         }
 
         public static int ParseInt(object obj)
         {
-            if (obj is int) return (int)obj;
+            if (obj is int intValue) 
+                return intValue;
 
-            try
-            {
-                if (obj == null) return 0;
-                if (int.TryParse(obj.ToString(), out int result))
-                    return result;
-                return 0;
-            }
-            catch (Exception)
-            {
-                return 0;
-            }
+            return int.TryParse(obj?.ToString(), out int result) ? result : 0;
         }
 
         public string GetErrorString()
@@ -390,9 +302,9 @@ namespace Server
                 case 0:
                     return "No Error";
                 case 1:
-                    return "Can 't open com port";
+                    return "Can't open com port";
                 case 2:
-                    return "Can 't set com port";
+                    return "Can't set com port";
                 case 3:
                     return "Error in creating socket";
                 case 4:
@@ -406,9 +318,9 @@ namespace Server
                 case 8:
                     return "Error in allocating memory in socket dll";
                 case 101:
-                    return "Can 't send data to device";
+                    return "Can't send data to device";
                 case 102:
-                    return "Can 't read data from device";
+                    return "Can't read data from device";
                 case 103:
                     return "Error in parameter";
                 case 104:
