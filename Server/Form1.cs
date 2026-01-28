@@ -15,10 +15,12 @@ namespace Server
     public partial class Form1 : Form
     {
         private const int MAX_CONNECTION = 10;
+        private const int DATA_FETCH_TIMEOUT_MS = 120000; // 2 minutes timeout for device data fetch
         private bool statusOpen = true;
         private TcpListener listener;
         private readonly object lockObject = new object();
         private int activeConnections = 0;
+        private CancellationTokenSource cancellationTokenSource;
 
         public Form1()
         {
@@ -76,7 +78,7 @@ namespace Server
             }
         }
 
-        private async Task btnStart_ClickAsync(object sender, EventArgs e)
+        private async void btnStart_ClickAsync(object sender, EventArgs e)
         {
             try
             {
@@ -91,6 +93,10 @@ namespace Server
                 {
                     statusOpen = true;
                 }
+                
+                // Create cancellation token for proper shutdown
+                cancellationTokenSource = new CancellationTokenSource();
+                
                 UpdateStatus("Starting...", Color.Orange);
                 btnStart.Enabled = false;
                 btnStop.Enabled = true;
@@ -101,35 +107,39 @@ namespace Server
                 UpdateStatus("Running", Color.Green);
                 AppendLog("Server started successfully");
 
-                bool shouldRun;
-                lock (lockObject)
+                try
                 {
-                    shouldRun = statusOpen;
+                    while (!cancellationTokenSource.Token.IsCancellationRequested)
+                    {
+                        var client = await listener.AcceptTcpClientAsync();
+                        
+                        // Check connection limit
+                        int currentConnections = Interlocked.Increment(ref activeConnections);
+                        if (currentConnections > MAX_CONNECTION)
+                        {
+                            Interlocked.Decrement(ref activeConnections);
+                            AppendLog($"Connection rejected: maximum connections ({MAX_CONNECTION}) reached");
+                            client?.Close();
+                            client?.Dispose();
+                        }
+                        else
+                        {
+                            // Use thread pool for better performance
+                            // Add exception handling to prevent silent failures
+                            _ = System.Threading.Tasks.Task.Run(() => HandleClient(client))
+                                .ContinueWith(t =>
+                                {
+                                    if (t.IsFaulted)
+                                    {
+                                        Logging.Write(Logging.ERROR, "HandleClient", $"Unhandled exception: {t.Exception?.ToString()}");
+                                    }
+                                }, TaskScheduler.Default);
+                        }
+                    }
                 }
-
-                while (shouldRun)
+                catch (ObjectDisposedException)
                 {
-                    var client = await listener.AcceptTcpClientAsync();
-                    
-                    // Check connection limit
-                    int currentConnections = Interlocked.Increment(ref activeConnections);
-                    if (currentConnections > MAX_CONNECTION)
-                    {
-                        Interlocked.Decrement(ref activeConnections);
-                        AppendLog($"Connection rejected: maximum connections ({MAX_CONNECTION}) reached");
-                        client?.Close();
-                        client?.Dispose();
-                    }
-                    else
-                    {
-                        // Use thread pool for better performance
-                        _ = System.Threading.Tasks.Task.Run(() => HandleClient(client));
-                    }
-                    
-                    lock (lockObject)
-                    {
-                        shouldRun = statusOpen;
-                    }
+                    // Expected when listener is stopped intentionally during shutdown
                 }
             }
             catch (ObjectDisposedException)
@@ -201,7 +211,7 @@ namespace Server
                                 AppendLog($"Invalid IP address: {ip}");
                                 writer.WriteLine("ERROR: Invalid IP address format");
                                 writer.WriteLine("EXIT");
-                                continue;
+                                break;
                             }
                             
                             // Validate port range
@@ -210,16 +220,16 @@ namespace Server
                                 AppendLog($"Invalid port: {port}");
                                 writer.WriteLine("ERROR: Invalid port number (must be 1-65535)");
                                 writer.WriteLine("EXIT");
-                                continue;
+                                break;
                             }
                             
                             // Validate machine number
-                            if (machineNumber < 0)
+                            if (machineNumber <= 0)
                             {
                                 AppendLog($"Invalid machine number: {machineNumber}");
-                                writer.WriteLine("ERROR: Invalid machine number");
+                                writer.WriteLine("ERROR: Invalid machine number (must be > 0)");
                                 writer.WriteLine("EXIT");
-                                continue;
+                                break;
                             }
                             
                             // Optional date filtering parameters
@@ -278,6 +288,9 @@ namespace Server
                 {
                     statusOpen = false;
                 }
+                
+                // Signal cancellation to stop accepting new connections
+                cancellationTokenSource?.Cancel();
                 
                 if (listener != null)
                 {
@@ -359,9 +372,8 @@ namespace Server
                     
                     // Add timeout protection to prevent infinite loop
                     var timeout = Stopwatch.StartNew();
-                    const int TIMEOUT_MS = 120000; // 2 minutes timeout
                     
-                    while (timeout.ElapsedMilliseconds < TIMEOUT_MS)
+                    while (timeout.ElapsedMilliseconds < DATA_FETCH_TIMEOUT_MS)
                     {
                         GLogData data = new GLogData();
                         success = SFC3KPC1.GetGeneralLogData(machineNumber,
@@ -383,6 +395,18 @@ namespace Server
                             data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1 ||
                             data.vMonth < 1 || data.vMonth > 12 ||
                             data.vDay < 1 || data.vDay > 31)
+                        {
+                            invalidRecords++;
+                            continue;
+                        }
+                        
+                        // Verify the date is actually valid (handles cases like Feb 30, Apr 31, etc.)
+                        try
+                        {
+                            // This will throw if the date combination is invalid
+                            var testDate = new DateTime(data.vYear, data.vMonth, data.vDay);
+                        }
+                        catch (ArgumentOutOfRangeException)
                         {
                             invalidRecords++;
                             continue;
@@ -414,7 +438,14 @@ namespace Server
                             }
                             catch (ArgumentOutOfRangeException ex)
                             {
-                                // Skip records with invalid dates
+                                // Skip records with invalid dates (e.g., out of range values)
+                                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
+                                invalidRecords++;
+                                continue;
+                            }
+                            catch (ArgumentException ex)
+                            {
+                                // Skip records with invalid date combinations (e.g., Feb 30)
                                 Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
                                 invalidRecords++;
                                 continue;
@@ -425,7 +456,7 @@ namespace Server
                         logDataList.Add(data);
                     }
                     
-                    if (timeout.ElapsedMilliseconds >= TIMEOUT_MS)
+                    if (timeout.ElapsedMilliseconds >= DATA_FETCH_TIMEOUT_MS)
                     {
                         Logging.Write(Logging.ERROR, "GetAttendanceData", $"Timeout reached after {timeout.ElapsedMilliseconds}ms, {totalRecords} records processed");
                     }
