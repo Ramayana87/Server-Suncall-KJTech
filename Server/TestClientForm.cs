@@ -306,9 +306,12 @@ namespace Server
                     client.EndConnect(result);
                     
                     // Set read/write timeouts
-                    // Increased read timeout to 120 seconds to handle large datasets from biometric devices
-                    client.ReceiveTimeout = 120000; // 120 seconds (2 minutes)
-                    client.SendTimeout = 10000; // 10 seconds
+                    // Increased read timeout to 300 seconds (5 minutes) to handle:
+                    // - Large datasets from biometric devices (can have 100K+ records)
+                    // - Heavy processing and date filtering
+                    // - JSON serialization and network transmission
+                    client.ReceiveTimeout = 300000; // 300 seconds (5 minutes)
+                    client.SendTimeout = 30000; // 30 seconds
                     
                     using (StreamReader reader = new StreamReader(client.GetStream()))
                     using (StreamWriter writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
@@ -461,9 +464,13 @@ namespace Server
                     client.EndConnect(result);
                     
                     // Set read/write timeouts
-                    // Increased read timeout to 120 seconds to handle large mockup datasets (e.g., may 5.txt with ~189K records)
-                    client.ReceiveTimeout = 120000; // 120 seconds (2 minutes)
-                    client.SendTimeout = 10000; // 10 seconds
+                    // Increased read timeout to 300 seconds (5 minutes) to handle:
+                    // - Large mockup datasets (e.g., may 5.txt with ~189K records)
+                    // - Heavy date filtering (can filter out 155K+ records)
+                    // - JSON serialization of thousands of records
+                    // - Network transmission of large payload
+                    client.ReceiveTimeout = 300000; // 300 seconds (5 minutes)
+                    client.SendTimeout = 30000; // 30 seconds
 
                     using (StreamReader reader = new StreamReader(client.GetStream()))
                     using (StreamWriter writer = new StreamWriter(client.GetStream()) { AutoFlush = true })

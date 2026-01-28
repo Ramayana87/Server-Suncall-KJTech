@@ -239,15 +239,22 @@ namespace Server
                                         toDate = parsedTo;
                                 }
 
+                                AppendLog($"[MOCKUP_GETLOGS] Starting data retrieval for machine {machineNumber}...");
                                 List<GLogData> logData = GetMockupAttendanceData(machineNumber, fromDate, toDate);
                                 stopwatch.Stop();
 
+                                AppendLog($"[MOCKUP_GETLOGS] Data retrieved: {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms. Starting serialization...");
+                                var serializeWatch = System.Diagnostics.Stopwatch.StartNew();
                                 string jsonData = JsonConvert.SerializeObject(logData);
+                                serializeWatch.Stop();
+                                AppendLog($"[MOCKUP_GETLOGS] Serialization completed in {serializeWatch.ElapsedMilliseconds}ms. Data size: {jsonData.Length / 1024}KB. Sending...");
 
+                                var sendWatch = System.Diagnostics.Stopwatch.StartNew();
                                 writer.WriteLine(jsonData);
                                 writer.WriteLine("EXIT");
+                                sendWatch.Stop();
 
-                                AppendLog($"[MOCKUP_GETLOGS] Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
+                                AppendLog($"[MOCKUP_GETLOGS] Sent {logData.Count} records in total {stopwatch.ElapsedMilliseconds + serializeWatch.ElapsedMilliseconds + sendWatch.ElapsedMilliseconds}ms (retrieve: {stopwatch.ElapsedMilliseconds}ms, serialize: {serializeWatch.ElapsedMilliseconds}ms, send: {sendWatch.ElapsedMilliseconds}ms)");
                             }
                             catch (Exception ex)
                             {
