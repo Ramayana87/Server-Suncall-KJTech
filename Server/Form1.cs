@@ -574,7 +574,10 @@ namespace Server
                     return logDataList;
                 }
 
+                AppendLog($"[MOCKUP_GETLOGS] Reading file: {fileName}");
                 var lines = File.ReadAllLines(filePath);
+                AppendLog($"[MOCKUP_GETLOGS] File loaded: {lines.Length} lines, processing...");
+                
                 int recordNumber = 1;
                 int totalRecords = 0;
                 int filteredRecords = 0;

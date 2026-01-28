@@ -306,7 +306,8 @@ namespace Server
                     client.EndConnect(result);
                     
                     // Set read/write timeouts
-                    client.ReceiveTimeout = 30000; // 30 seconds
+                    // Increased read timeout to 120 seconds to handle large datasets from biometric devices
+                    client.ReceiveTimeout = 120000; // 120 seconds (2 minutes)
                     client.SendTimeout = 10000; // 10 seconds
                     
                     using (StreamReader reader = new StreamReader(client.GetStream()))
@@ -460,7 +461,8 @@ namespace Server
                     client.EndConnect(result);
                     
                     // Set read/write timeouts
-                    client.ReceiveTimeout = 30000; // 30 seconds
+                    // Increased read timeout to 120 seconds to handle large mockup datasets (e.g., may 5.txt with ~189K records)
+                    client.ReceiveTimeout = 120000; // 120 seconds (2 minutes)
                     client.SendTimeout = 10000; // 10 seconds
 
                     using (StreamReader reader = new StreamReader(client.GetStream()))
