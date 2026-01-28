@@ -39,11 +39,38 @@ namespace Server
             {
                 txtPort.Text = "9999";
                 UpdateStatus("Ready", Color.Gray);
+                
+                // Add menu to launch test client (only if not already added)
+                if (this.MainMenuStrip == null)
+                {
+                    var menuStrip = new MenuStrip();
+                    var toolsMenu = new ToolStripMenuItem("Tools");
+                    var testClientMenuItem = new ToolStripMenuItem("Launch Test Client", null, LaunchTestClient);
+                    toolsMenu.DropDownItems.Add(testClientMenuItem);
+                    menuStrip.Items.Add(toolsMenu);
+                    this.MainMenuStrip = menuStrip;
+                    this.Controls.Add(menuStrip);
+                }
             }
             catch (Exception ex)
             {
                 Logging.Write(Logging.ERROR, "Form1_Load", ex.Message);
                 UpdateStatus("Error", Color.Red);
+            }
+        }
+
+        private void LaunchTestClient(object sender, EventArgs e)
+        {
+            try
+            {
+                var testForm = new TestClientForm();
+                testForm.Show();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error launching test client: {ex.Message}", "Error", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Logging.Write(Logging.ERROR, "LaunchTestClient", ex.Message);
             }
         }
 
@@ -136,14 +163,33 @@ namespace Server
                         int machineNumber = ParseInt(parameters[0]);
                         string ip = SafeToString(parameters[1]);
                         int port = ParseInt(parameters[2]);
+                        
+                        // Optional date filtering parameters
+                        DateTime? fromDate = null;
+                        DateTime? toDate = null;
+                        
+                        if (parameters.Count >= 4 && !string.IsNullOrEmpty(SafeToString(parameters[3])))
+                        {
+                            if (DateTime.TryParse(parameters[3], out DateTime parsedFrom))
+                                fromDate = parsedFrom;
+                        }
+                        
+                        if (parameters.Count >= 5 && !string.IsNullOrEmpty(SafeToString(parameters[4])))
+                        {
+                            if (DateTime.TryParse(parameters[4], out DateTime parsedTo))
+                                toDate = parsedTo;
+                        }
 
-                        List<GLogData> logData = GetAttendanceData(machineNumber, ip, port);
+                        var stopwatch = Stopwatch.StartNew();
+                        List<GLogData> logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
+                        stopwatch.Stop();
+                        
                         string jsonData = JsonConvert.SerializeObject(logData);
                         
                         writer.WriteLine(jsonData);
                         writer.WriteLine("EXIT");
 
-                        AppendLog($"Sent {logData.Count} records");
+                        AppendLog($"Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
                     }
                     else
                     {
@@ -223,7 +269,7 @@ namespace Server
             }
         }
 
-        private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port)
+        private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
         {
             List<GLogData> logDataList = new List<GLogData>();
 
@@ -244,6 +290,10 @@ namespace Server
                 if (success)
                 {
                     int recordNumber = 1;
+                    int totalRecords = 0;
+                    int filteredRecords = 0;
+                    int invalidRecords = 0;
+                    
                     while (true)
                     {
                         GLogData data = new GLogData();
@@ -254,19 +304,59 @@ namespace Server
                             ref data.vHour, ref data.vMinute, ref data.vSecond);
 
                         if (!success) break;
+                        
+                        totalRecords++;
 
                         // Filter invalid records (validate year is reasonable)
                         if (data.EnrollNumber <= 0 || data.vGranted != 1 || 
                             data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
                         {
+                            invalidRecords++;
                             continue;
+                        }
+
+                        // Apply date range filter if specified
+                        bool passesDateFilter = true;
+                        if (fromDate.HasValue || toDate.HasValue)
+                        {
+                            try
+                            {
+                                DateTime recordDate = new DateTime(data.vYear, data.vMonth, data.vDay, 
+                                    data.vHour, data.vMinute, data.vSecond & 0xFF);
+                                
+                                if (fromDate.HasValue && recordDate < fromDate.Value)
+                                {
+                                    passesDateFilter = false;
+                                }
+                                else if (toDate.HasValue && recordDate > toDate.Value)
+                                {
+                                    passesDateFilter = false;
+                                }
+                                
+                                if (!passesDateFilter)
+                                {
+                                    filteredRecords++;
+                                    continue;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                // Skip records with invalid dates
+                                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
+                                invalidRecords++;
+                                continue;
+                            }
                         }
 
                         data.no = recordNumber++;
                         logDataList.Add(data);
                     }
 
-                    Logging.Write(Logging.WATCH, "GetAttendanceData", $"Successfully read {logDataList.Count} records");
+                    string filterInfo = (fromDate.HasValue || toDate.HasValue) 
+                        ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
+                        : $" (invalid {invalidRecords} from {totalRecords} total)";
+                    Logging.Write(Logging.WATCH, "GetAttendanceData", 
+                        $"Successfully read {logDataList.Count} records{filterInfo}");
                 }
 
                 SFC3KPC1.Disconnect(machineNumber);
