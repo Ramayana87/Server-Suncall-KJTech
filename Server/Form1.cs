@@ -78,10 +78,11 @@ namespace Server
                     };
                     t.Start();
                 }
-
-                listener.Stop();
-                AppendLog("Server disconnected");
-                UpdateStatus("Stopped", Color.Gray);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Expected when listener is stopped intentionally
+                AppendLog("Server stopped");
             }
             catch (Exception ex)
             {
@@ -91,8 +92,19 @@ namespace Server
             }
             finally
             {
-                btnStart.Enabled = true;
-                btnStop.Enabled = false;
+                if (listener != null)
+                {
+                    listener.Stop();
+                    listener = null;
+                }
+                
+                // Only reset buttons if we're actually stopping
+                if (!statusOpen)
+                {
+                    UpdateStatus("Stopped", Color.Gray);
+                    btnStart.Enabled = true;
+                    btnStop.Enabled = false;
+                }
             }
         }
 
@@ -122,7 +134,7 @@ namespace Server
                     if (parameters.Count >= 3)
                     {
                         int machineNumber = ParseInt(parameters[0]);
-                        string ip = ToString(parameters[1]);
+                        string ip = SafeToString(parameters[1]);
                         int port = ParseInt(parameters[2]);
 
                         List<GLogData> logData = GetAttendanceData(machineNumber, ip, port);
@@ -159,9 +171,15 @@ namespace Server
             try
             {
                 statusOpen = false;
-                listener?.Stop();
+                
+                if (listener != null)
+                {
+                    listener.Stop();
+                    listener = null;
+                }
+                
                 UpdateStatus("Stopped", Color.Gray);
-                AppendLog("Server stopped");
+                AppendLog("Server stopped by user");
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
             }
@@ -237,8 +255,9 @@ namespace Server
 
                         if (!success) break;
 
-                        // Filter invalid records
-                        if (data.EnrollNumber <= 0 || data.vGranted != 1 || data.vYear < 2024)
+                        // Filter invalid records (validate year is reasonable)
+                        if (data.EnrollNumber <= 0 || data.vGranted != 1 || 
+                            data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
                         {
                             continue;
                         }
@@ -260,34 +279,7 @@ namespace Server
             return logDataList;
         }
 
-        public static DateTime ParseDateTimes(object obj)
-        {
-            if (obj is DateTime dateTime) 
-                return dateTime;
-
-            try
-            {
-                if (obj == null || obj.ToString() == string.Empty)
-                    return DateTime.Now;
-
-                if (DateTime.TryParse(obj.ToString(), out DateTime result))
-                {
-                    // Filter out invalid years
-                    if (result.Year < 1900 || result.Year > DateTime.Now.Year + 1)
-                        return DateTime.Now;
-                    
-                    return result;
-                }
-
-                return DateTime.Now;
-            }
-            catch
-            {
-                return DateTime.Now;
-            }
-        }
-
-        public static string ToString(object obj)
+        public static string SafeToString(object obj)
         {
             return obj?.ToString()?.Trim() ?? string.Empty;
         }
@@ -310,9 +302,9 @@ namespace Server
                 case 0:
                     return "No Error";
                 case 1:
-                    return "Can 't open com port";
+                    return "Can't open com port";
                 case 2:
-                    return "Can 't set com port";
+                    return "Can't set com port";
                 case 3:
                     return "Error in creating socket";
                 case 4:
@@ -326,9 +318,9 @@ namespace Server
                 case 8:
                     return "Error in allocating memory in socket dll";
                 case 101:
-                    return "Can 't send data to device";
+                    return "Can't send data to device";
                 case 102:
-                    return "Can 't read data from device";
+                    return "Can't read data from device";
                 case 103:
                     return "Error in parameter";
                 case 104:
