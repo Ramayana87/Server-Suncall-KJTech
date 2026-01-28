@@ -39,7 +39,7 @@ namespace Server
             {
                 txtPort.Text = "9999";
                 UpdateStatus("Ready", Color.Gray);
-                
+
                 // Add menu to launch test client (only if not already added)
                 if (this.MainMenuStrip == null)
                 {
@@ -68,7 +68,7 @@ namespace Server
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error launching test client: {ex.Message}", "Error", 
+                MessageBox.Show($"Error launching test client: {ex.Message}", "Error",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Logging.Write(Logging.ERROR, "LaunchTestClient", ex.Message);
             }
@@ -80,7 +80,7 @@ namespace Server
             {
                 if (!int.TryParse(txtPort.Text, out int portNumber) || portNumber <= 0 || portNumber > 65535)
                 {
-                    MessageBox.Show("Please enter a valid port number (1-65535)", "Invalid Port", 
+                    MessageBox.Show("Please enter a valid port number (1-65535)", "Invalid Port",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -124,7 +124,7 @@ namespace Server
                     listener.Stop();
                     listener = null;
                 }
-                
+
                 // Only reset buttons if we're actually stopping
                 if (!statusOpen)
                 {
@@ -148,7 +148,7 @@ namespace Server
                 while (client.Connected)
                 {
                     string received = reader.ReadLine();
-                    
+
                     if (string.IsNullOrEmpty(received) || received.Equals("EXIT", StringComparison.OrdinalIgnoreCase))
                     {
                         break;
@@ -158,38 +158,70 @@ namespace Server
                     UpdateStatus("Connected", Color.Green);
 
                     var parameters = received.Split('|').ToList();
-                    if (parameters.Count >= 3)
+
+                    // Check if first parameter is an operation type (GETLOGS, GETUSERS)
+                    string operation = "GETLOGS"; // default operation for backward compatibility
+                    int paramOffset = 0;
+
+                    if (parameters.Count > 0)
                     {
-                        int machineNumber = ParseInt(parameters[0]);
-                        string ip = SafeToString(parameters[1]);
-                        int port = ParseInt(parameters[2]);
-                        
-                        // Optional date filtering parameters
-                        DateTime? fromDate = null;
-                        DateTime? toDate = null;
-                        
-                        if (parameters.Count >= 4 && !string.IsNullOrEmpty(SafeToString(parameters[3])))
+                        string firstParam = SafeToString(parameters[0]).ToUpper();
+                        if (firstParam == "GETLOGS" || firstParam == "GETUSERS")
                         {
-                            if (DateTime.TryParse(parameters[3], out DateTime parsedFrom))
-                                fromDate = parsedFrom;
+                            operation = firstParam;
+                            paramOffset = 1;
                         }
-                        
-                        if (parameters.Count >= 5 && !string.IsNullOrEmpty(SafeToString(parameters[4])))
-                        {
-                            if (DateTime.TryParse(parameters[4], out DateTime parsedTo))
-                                toDate = parsedTo;
-                        }
+                    }
+
+                    if (parameters.Count >= 3 + paramOffset)
+                    {
+                        int machineNumber = ParseInt(parameters[0 + paramOffset]);
+                        string ip = SafeToString(parameters[1 + paramOffset]);
+                        int port = ParseInt(parameters[2 + paramOffset]);
 
                         var stopwatch = Stopwatch.StartNew();
-                        List<GLogData> logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
-                        stopwatch.Stop();
-                        
-                        string jsonData = JsonConvert.SerializeObject(logData);
-                        
-                        writer.WriteLine(jsonData);
-                        writer.WriteLine("EXIT");
 
-                        AppendLog($"Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
+                        if (operation == "GETUSERS")
+                        {
+                            // Get distinct users from biometric device
+                            List<GLogData> users = GetDistinctUsers(machineNumber, ip, port);
+                            stopwatch.Stop();
+
+                            string jsonData = JsonConvert.SerializeObject(users);
+                            writer.WriteLine(jsonData);
+                            writer.WriteLine("EXIT");
+
+                            AppendLog($"[GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                        }
+                        else // GETLOGS
+                        {
+                            // Optional date filtering parameters
+                            DateTime? fromDate = null;
+                            DateTime? toDate = null;
+
+                            if (parameters.Count >= 4 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[3 + paramOffset])))
+                            {
+                                if (DateTime.TryParse(parameters[3 + paramOffset], out DateTime parsedFrom))
+                                    fromDate = parsedFrom;
+                            }
+
+                            if (parameters.Count >= 5 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[4 + paramOffset])))
+                            {
+                                if (DateTime.TryParse(parameters[4 + paramOffset], out DateTime parsedTo))
+                                    toDate = parsedTo;
+                            }
+
+                            List<GLogData> logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
+                            stopwatch.Stop();
+
+                            string jsonData = JsonConvert.SerializeObject(logData);
+
+                            writer.WriteLine(jsonData);
+                            writer.WriteLine("EXIT");
+
+                            AppendLog($"Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
+
+                        }
                     }
                     else
                     {
@@ -217,13 +249,13 @@ namespace Server
             try
             {
                 statusOpen = false;
-                
+
                 if (listener != null)
                 {
                     listener.Stop();
                     listener = null;
                 }
-                
+
                 UpdateStatus("Stopped", Color.Gray);
                 AppendLog("Server stopped by user");
                 btnStart.Enabled = true;
@@ -293,7 +325,7 @@ namespace Server
                     int totalRecords = 0;
                     int filteredRecords = 0;
                     int invalidRecords = 0;
-                    
+
                     while (true)
                     {
                         GLogData data = new GLogData();
@@ -304,11 +336,11 @@ namespace Server
                             ref data.vHour, ref data.vMinute, ref data.vSecond);
 
                         if (!success) break;
-                        
+
                         totalRecords++;
 
                         // Filter invalid records (validate year is reasonable)
-                        if (data.EnrollNumber <= 0 || data.vGranted != 1 || 
+                        if (data.EnrollNumber <= 0 || data.vGranted != 1 ||
                             data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
                         {
                             invalidRecords++;
@@ -321,9 +353,9 @@ namespace Server
                         {
                             try
                             {
-                                DateTime recordDate = new DateTime(data.vYear, data.vMonth, data.vDay, 
+                                DateTime recordDate = new DateTime(data.vYear, data.vMonth, data.vDay,
                                     data.vHour, data.vMinute, data.vSecond & 0xFF);
-                                
+
                                 if (fromDate.HasValue && recordDate < fromDate.Value)
                                 {
                                     passesDateFilter = false;
@@ -332,7 +364,7 @@ namespace Server
                                 {
                                     passesDateFilter = false;
                                 }
-                                
+
                                 if (!passesDateFilter)
                                 {
                                     filteredRecords++;
@@ -352,10 +384,10 @@ namespace Server
                         logDataList.Add(data);
                     }
 
-                    string filterInfo = (fromDate.HasValue || toDate.HasValue) 
+                    string filterInfo = (fromDate.HasValue || toDate.HasValue)
                         ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
                         : $" (invalid {invalidRecords} from {totalRecords} total)";
-                    Logging.Write(Logging.WATCH, "GetAttendanceData", 
+                    Logging.Write(Logging.WATCH, "GetAttendanceData",
                         $"Successfully read {logDataList.Count} records{filterInfo}");
                 }
 
@@ -369,6 +401,73 @@ namespace Server
             return logDataList;
         }
 
+        private List<GLogData> GetDistinctUsers(int machineNumber, string ip, int port)
+        {
+            List<GLogData> userList = new List<GLogData>();
+
+            try
+            {
+                if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
+                {
+                    Logging.Write(Logging.ERROR, "GetDistinctUsers", "Failed to connect to device");
+                    return userList;
+                }
+
+                try
+                {
+                    bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
+                    Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Start reading: {GetErrorString()}");
+
+                    success = SFC3KPC1.ReadGeneralLogData(machineNumber);
+                    Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Read result: {GetErrorString()}");
+
+                    if (success)
+                    {
+                        HashSet<int> uniqueUsers = new HashSet<int>();
+
+                        while (true)
+                        {
+                            GLogData data = new GLogData();
+                            success = SFC3KPC1.GetGeneralLogData(machineNumber,
+                                ref data.vEnrollNumber, ref data.vGranted, ref data.vMethod,
+                                ref data.vDoorMode, ref data.vFunNumber, ref data.vSensor,
+                                ref data.vYear, ref data.vMonth, ref data.vDay,
+                                ref data.vHour, ref data.vMinute, ref data.vSecond);
+
+                            if (!success) break;
+
+                            // Only include granted users with fingerprint method
+                            if (data.EnrollNumber > 0 && data.vGranted == 1)
+                            {
+                                // Check if it's fingerprint authentication
+                                int vmmode = data.vMethod & (Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP);
+                                bool isFingerprintAuth = (vmmode & Constants.GLOG_BY_FP) == Constants.GLOG_BY_FP;
+
+                                if (isFingerprintAuth && !uniqueUsers.Contains(data.EnrollNumber))
+                                {
+                                    uniqueUsers.Add(data.EnrollNumber);
+                                    userList.Add(data);
+                                }
+                            }
+                        }
+
+                        Logging.Write(Logging.WATCH, "GetDistinctUsers",
+                            $"Successfully read {userList.Count} distinct users");
+                    }
+                }
+                finally
+                {
+                    SFC3KPC1.Disconnect(machineNumber);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logging.Write(Logging.ERROR, "GetDistinctUsers", ex.Message);
+            }
+
+            return userList;
+        }
+
         public static string SafeToString(object obj)
         {
             return obj?.ToString()?.Trim() ?? string.Empty;
@@ -376,7 +475,7 @@ namespace Server
 
         public static int ParseInt(object obj)
         {
-            if (obj is int intValue) 
+            if (obj is int intValue)
                 return intValue;
 
             return int.TryParse(obj?.ToString(), out int result) ? result : 0;
