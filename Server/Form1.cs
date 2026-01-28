@@ -17,7 +17,6 @@ namespace Server
         private const int MAX_CONNECTION = 10;
         private bool statusOpen = true;
         private TcpListener listener;
-        private BiometricDeviceController deviceController = new BiometricDeviceController();
 
         public Form1()
         {
@@ -272,15 +271,102 @@ namespace Server
 
         private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
         {
-            // Use the BiometricDeviceController for improved separation of concerns
-            var result = deviceController.GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
-            
-            if (!result.Success)
+            List<GLogData> logDataList = new List<GLogData>();
+
+            try
             {
-                Logging.Write(Logging.ERROR, "GetAttendanceData", result.ErrorMessage ?? "Unknown error");
+                if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
+                {
+                    Logging.Write(Logging.ERROR, "GetAttendanceData", "Failed to connect to device");
+                    return logDataList;
+                }
+
+                bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
+                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Start reading: {GetErrorString()}");
+
+                success = SFC3KPC1.ReadGeneralLogData(machineNumber);
+                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Read result: {GetErrorString()}");
+
+                if (success)
+                {
+                    int recordNumber = 1;
+                    int totalRecords = 0;
+                    int filteredRecords = 0;
+                    int invalidRecords = 0;
+                    
+                    while (true)
+                    {
+                        GLogData data = new GLogData();
+                        success = SFC3KPC1.GetGeneralLogData(machineNumber,
+                            ref data.vEnrollNumber, ref data.vGranted, ref data.vMethod,
+                            ref data.vDoorMode, ref data.vFunNumber, ref data.vSensor,
+                            ref data.vYear, ref data.vMonth, ref data.vDay,
+                            ref data.vHour, ref data.vMinute, ref data.vSecond);
+
+                        if (!success) break;
+                        
+                        totalRecords++;
+
+                        // Filter invalid records (validate year is reasonable)
+                        if (data.EnrollNumber <= 0 || data.vGranted != 1 || 
+                            data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                        {
+                            invalidRecords++;
+                            continue;
+                        }
+
+                        // Apply date range filter if specified
+                        bool passesDateFilter = true;
+                        if (fromDate.HasValue || toDate.HasValue)
+                        {
+                            try
+                            {
+                                DateTime recordDate = new DateTime(data.vYear, data.vMonth, data.vDay, 
+                                    data.vHour, data.vMinute, data.vSecond & 0xFF);
+                                
+                                if (fromDate.HasValue && recordDate < fromDate.Value)
+                                {
+                                    passesDateFilter = false;
+                                }
+                                else if (toDate.HasValue && recordDate > toDate.Value)
+                                {
+                                    passesDateFilter = false;
+                                }
+                                
+                                if (!passesDateFilter)
+                                {
+                                    filteredRecords++;
+                                    continue;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                // Skip records with invalid dates
+                                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
+                                invalidRecords++;
+                                continue;
+                            }
+                        }
+
+                        data.no = recordNumber++;
+                        logDataList.Add(data);
+                    }
+
+                    string filterInfo = (fromDate.HasValue || toDate.HasValue) 
+                        ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
+                        : $" (invalid {invalidRecords} from {totalRecords} total)";
+                    Logging.Write(Logging.WATCH, "GetAttendanceData", 
+                        $"Successfully read {logDataList.Count} records{filterInfo}");
+                }
+
+                SFC3KPC1.Disconnect(machineNumber);
             }
-            
-            return result.Data;
+            catch (Exception ex)
+            {
+                Logging.Write(Logging.ERROR, "GetAttendanceData", ex.Message);
+            }
+
+            return logDataList;
         }
 
         public static string SafeToString(object obj)
