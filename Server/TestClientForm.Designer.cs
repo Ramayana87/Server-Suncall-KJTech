@@ -21,6 +21,12 @@ namespace Server
             this.btnLoadMockup = new System.Windows.Forms.Button();
             this.btnTestMockup = new System.Windows.Forms.Button();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
+            this.label8 = new System.Windows.Forms.Label();
+            this.txtMachinePort = new System.Windows.Forms.TextBox();
+            this.label7 = new System.Windows.Forms.Label();
+            this.txtMachineIP = new System.Windows.Forms.TextBox();
+            this.label6 = new System.Windows.Forms.Label();
+            this.txtMachineNumber = new System.Windows.Forms.TextBox();
             this.chkUseDateFilter = new System.Windows.Forms.CheckBox();
             this.btnTestServer = new System.Windows.Forms.Button();
             this.label3 = new System.Windows.Forms.Label();
@@ -74,6 +80,12 @@ namespace Server
             // 
             // groupBox2
             // 
+            this.groupBox2.Controls.Add(this.label8);
+            this.groupBox2.Controls.Add(this.txtMachinePort);
+            this.groupBox2.Controls.Add(this.label7);
+            this.groupBox2.Controls.Add(this.txtMachineIP);
+            this.groupBox2.Controls.Add(this.label6);
+            this.groupBox2.Controls.Add(this.txtMachineNumber);
             this.groupBox2.Controls.Add(this.chkUseDateFilter);
             this.groupBox2.Controls.Add(this.btnTestServer);
             this.groupBox2.Controls.Add(this.label3);
@@ -82,10 +94,61 @@ namespace Server
             this.groupBox2.Controls.Add(this.txtServerIP);
             this.groupBox2.Location = new System.Drawing.Point(280, 12);
             this.groupBox2.Name = "groupBox2";
-            this.groupBox2.Size = new System.Drawing.Size(250, 145);
+            this.groupBox2.Size = new System.Drawing.Size(250, 240);
             this.groupBox2.TabIndex = 1;
             this.groupBox2.TabStop = false;
             this.groupBox2.Text = "Server Connection Test";
+            // 
+            // label8
+            // 
+            this.label8.AutoSize = true;
+            this.label8.Location = new System.Drawing.Point(140, 155);
+            this.label8.Name = "label8";
+            this.label8.Size = new System.Drawing.Size(74, 13);
+            this.label8.TabIndex = 14;
+            this.label8.Text = "Machine Port:";
+            // 
+            // txtMachinePort
+            // 
+            this.txtMachinePort.Location = new System.Drawing.Point(140, 175);
+            this.txtMachinePort.Name = "txtMachinePort";
+            this.txtMachinePort.Size = new System.Drawing.Size(95, 20);
+            this.txtMachinePort.TabIndex = 13;
+            this.txtMachinePort.Text = "4370";
+            // 
+            // label7
+            // 
+            this.label7.AutoSize = true;
+            this.label7.Location = new System.Drawing.Point(15, 115);
+            this.label7.Name = "label7";
+            this.label7.Size = new System.Drawing.Size(67, 13);
+            this.label7.TabIndex = 12;
+            this.label7.Text = "Machine IP:";
+            // 
+            // txtMachineIP
+            // 
+            this.txtMachineIP.Location = new System.Drawing.Point(15, 135);
+            this.txtMachineIP.Name = "txtMachineIP";
+            this.txtMachineIP.Size = new System.Drawing.Size(220, 20);
+            this.txtMachineIP.TabIndex = 11;
+            this.txtMachineIP.Text = "192.168.1.201";
+            // 
+            // label6
+            // 
+            this.label6.AutoSize = true;
+            this.label6.Location = new System.Drawing.Point(15, 155);
+            this.label6.Name = "label6";
+            this.label6.Size = new System.Drawing.Size(94, 13);
+            this.label6.TabIndex = 10;
+            this.label6.Text = "Machine Number:";
+            // 
+            // txtMachineNumber
+            // 
+            this.txtMachineNumber.Location = new System.Drawing.Point(15, 175);
+            this.txtMachineNumber.Name = "txtMachineNumber";
+            this.txtMachineNumber.Size = new System.Drawing.Size(115, 20);
+            this.txtMachineNumber.TabIndex = 9;
+            this.txtMachineNumber.Text = "1";
             // 
             // chkUseDateFilter
             // 
@@ -101,7 +164,7 @@ namespace Server
             // 
             // btnTestServer
             // 
-            this.btnTestServer.Location = new System.Drawing.Point(15, 110);
+            this.btnTestServer.Location = new System.Drawing.Point(15, 205);
             this.btnTestServer.Name = "btnTestServer";
             this.btnTestServer.Size = new System.Drawing.Size(220, 25);
             this.btnTestServer.TabIndex = 5;
@@ -114,9 +177,9 @@ namespace Server
             this.label3.AutoSize = true;
             this.label3.Location = new System.Drawing.Point(140, 25);
             this.label3.Name = "label3";
-            this.label3.Size = new System.Drawing.Size(29, 13);
+            this.label3.Size = new System.Drawing.Size(64, 13);
             this.label3.TabIndex = 2;
-            this.label3.Text = "Port:";
+            this.label3.Text = "Server Port:";
             // 
             // txtServerPort
             // 
@@ -194,7 +257,7 @@ namespace Server
             // 
             this.txtLog.BackColor = System.Drawing.SystemColors.Window;
             this.txtLog.Font = new System.Drawing.Font("Consolas", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.txtLog.Location = new System.Drawing.Point(12, 227);
+            this.txtLog.Location = new System.Drawing.Point(12, 277);
             this.txtLog.Multiline = true;
             this.txtLog.Name = "txtLog";
             this.txtLog.ReadOnly = true;
@@ -205,7 +268,7 @@ namespace Server
             // label1
             // 
             this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(12, 210);
+            this.label1.Location = new System.Drawing.Point(12, 260);
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(28, 13);
             this.label1.TabIndex = 4;
@@ -216,7 +279,7 @@ namespace Server
             this.lblStatus.AutoSize = true;
             this.lblStatus.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.lblStatus.ForeColor = System.Drawing.Color.Gray;
-            this.lblStatus.Location = new System.Drawing.Point(12, 480);
+            this.lblStatus.Location = new System.Drawing.Point(12, 530);
             this.lblStatus.Name = "lblStatus";
             this.lblStatus.Size = new System.Drawing.Size(43, 13);
             this.lblStatus.TabIndex = 5;
@@ -224,7 +287,7 @@ namespace Server
             // 
             // btnClearLog
             // 
-            this.btnClearLog.Location = new System.Drawing.Point(455, 202);
+            this.btnClearLog.Location = new System.Drawing.Point(455, 252);
             this.btnClearLog.Name = "btnClearLog";
             this.btnClearLog.Size = new System.Drawing.Size(75, 23);
             this.btnClearLog.TabIndex = 6;
@@ -236,7 +299,7 @@ namespace Server
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(542, 503);
+            this.ClientSize = new System.Drawing.Size(542, 553);
             this.Controls.Add(this.btnClearLog);
             this.Controls.Add(this.lblStatus);
             this.Controls.Add(this.label1);
@@ -280,5 +343,11 @@ namespace Server
         private System.Windows.Forms.Label lblStatus;
         private System.Windows.Forms.CheckBox chkUseDateFilter;
         private System.Windows.Forms.Button btnClearLog;
+        private System.Windows.Forms.Label label6;
+        private System.Windows.Forms.TextBox txtMachineNumber;
+        private System.Windows.Forms.Label label7;
+        private System.Windows.Forms.TextBox txtMachineIP;
+        private System.Windows.Forms.Label label8;
+        private System.Windows.Forms.TextBox txtMachinePort;
     }
 }

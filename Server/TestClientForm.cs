@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using System.Net;
 using System.Net.Sockets;
 using Newtonsoft.Json;
 using System.Diagnostics;
@@ -22,9 +23,23 @@ namespace Server
 
         private void TestClientForm_Load(object sender, EventArgs e)
         {
-            // Set default values
-            txtServerIP.Text = "127.0.0.1";
+            // Set default values - get local IP like server does
+            IPAddress[] localIP = Dns.GetHostAddresses(Dns.GetHostName());
+            foreach (IPAddress address in localIP)
+            {
+                if (address.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    txtServerIP.Text = address.ToString();
+                    break;
+                }
+            }
+            
             txtServerPort.Text = "9999";
+            
+            // Set default machine configuration
+            txtMachineNumber.Text = "1";
+            txtMachineIP.Text = "192.168.1.201";
+            txtMachinePort.Text = "4370";
             
             // Find mockup data folder - try multiple locations
             string currentDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -94,24 +109,25 @@ namespace Server
                     foreach (var line in lines)
                     {
                         var parts = line.Split('\t');
-                        if (parts.Length >= 8)
+                        if (parts.Length >= 9)
                         {
                             try
                             {
                                 var data = new GLogData();
                                 
-                                // Parse line format: no, result, id, method, doormode, function, verification, time, captured
-                                if (int.TryParse(parts[0].Trim(), out int no))
+                                // Parse line format: [empty], no, result, id, method, doormode, function, verification, time, captured
+                                // Note: First element is empty due to leading tab
+                                if (int.TryParse(parts[1].Trim(), out int no))
                                     data.no = no;
                                 
-                                string id = parts[2].Trim();
+                                string id = parts[3].Trim();
                                 if (int.TryParse(id, out int enrollNum))
                                     data.vEnrollNumber = enrollNum;
                                 
-                                data.vGranted = parts[1].Trim() == "Granted" ? 1 : 0;
+                                data.vGranted = parts[2].Trim() == "Granted" ? 1 : 0;
                                 
                                 // Parse date time
-                                if (DateTime.TryParse(parts[7].Trim(), out DateTime recordTime))
+                                if (DateTime.TryParse(parts[8].Trim(), out DateTime recordTime))
                                 {
                                     data.vYear = recordTime.Year;
                                     data.vMonth = recordTime.Month;
@@ -224,6 +240,9 @@ namespace Server
             {
                 string serverIP = txtServerIP.Text.Trim();
                 string serverPortStr = txtServerPort.Text.Trim();
+                string machineNumberStr = txtMachineNumber.Text.Trim();
+                string machineIP = txtMachineIP.Text.Trim();
+                string machinePortStr = txtMachinePort.Text.Trim();
                 
                 // Validate inputs
                 if (string.IsNullOrEmpty(serverIP))
@@ -235,7 +254,28 @@ namespace Server
                 
                 if (!int.TryParse(serverPortStr, out int serverPort) || serverPort < 1 || serverPort > 65535)
                 {
-                    MessageBox.Show("Please enter a valid port number (1-65535)", "Validation Error", 
+                    MessageBox.Show("Please enter a valid server port number (1-65535)", "Validation Error", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                if (!int.TryParse(machineNumberStr, out int machineNumber))
+                {
+                    MessageBox.Show("Please enter a valid machine number", "Validation Error", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                if (string.IsNullOrEmpty(machineIP))
+                {
+                    MessageBox.Show("Please enter machine IP address", "Validation Error", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                if (!int.TryParse(machinePortStr, out int machinePort) || machinePort < 1 || machinePort > 65535)
+                {
+                    MessageBox.Show("Please enter a valid machine port number (1-65535)", "Validation Error", 
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -259,7 +299,7 @@ namespace Server
                         string fromDateStr = chkUseDateFilter.Checked ? dtpFrom.Value.ToString("yyyy-MM-dd HH:mm:ss") : "";
                         string toDateStr = chkUseDateFilter.Checked ? dtpTo.Value.AddDays(1).AddSeconds(-1).ToString("yyyy-MM-dd HH:mm:ss") : "";
                         
-                        string request = $"1|192.168.1.201|4370|{fromDateStr}|{toDateStr}";
+                        string request = $"{machineNumber}|{machineIP}|{machinePort}|{fromDateStr}|{toDateStr}";
                         
                         txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Sending request: {request}{Environment.NewLine}");
                         writer.WriteLine(request);
@@ -293,6 +333,25 @@ namespace Server
 
                             lblStatus.Text = $"Received {data.Count:N0} records in {stopwatch.ElapsedMilliseconds}ms";
                             lblStatus.ForeColor = Color.Green;
+                            
+                            // Save response to log file
+                            try
+                            {
+                                string logFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Log");
+                                if (!Directory.Exists(logFolder))
+                                {
+                                    Directory.CreateDirectory(logFolder);
+                                }
+                                
+                                string logFileName = Path.Combine(logFolder, $"ServerResponse_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+                                File.WriteAllText(logFileName, response);
+                                
+                                txtLog.AppendText($"  - Saved response to: {logFileName}{Environment.NewLine}{Environment.NewLine}");
+                            }
+                            catch (Exception logEx)
+                            {
+                                txtLog.AppendText($"  - Warning: Could not save log file: {logEx.Message}{Environment.NewLine}{Environment.NewLine}");
+                            }
                         }
                     }
                 }
