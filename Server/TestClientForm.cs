@@ -291,10 +291,23 @@ namespace Server
 
                 var stopwatch = Stopwatch.StartNew();
 
-                // Connect to server
+                // Connect to server with timeout
                 using (TcpClient client = new TcpClient())
                 {
-                    client.Connect(serverIP, serverPort);
+                    // Set connection timeout
+                    var result = client.BeginConnect(serverIP, serverPort, null, null);
+                    var success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+                    
+                    if (!success)
+                    {
+                        throw new Exception("Connection timeout - server may not be running");
+                    }
+                    
+                    client.EndConnect(result);
+                    
+                    // Set read/write timeouts
+                    client.ReceiveTimeout = 30000; // 30 seconds
+                    client.SendTimeout = 10000; // 10 seconds
                     
                     using (StreamReader reader = new StreamReader(client.GetStream()))
                     using (StreamWriter writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
@@ -360,6 +373,22 @@ namespace Server
                     }
                 }
             }
+            catch (TimeoutException tex)
+            {
+                lblStatus.Text = "Connection timeout";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Timeout: {tex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection timeout. Please ensure:\n1. Server is running\n2. Server IP and Port are correct\n3. Firewall is not blocking the connection", "Connection Timeout",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (System.Net.Sockets.SocketException sex)
+            {
+                lblStatus.Text = "Connection failed";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Connection failed: {sex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection failed. Please ensure:\n1. Server is running\n2. Server IP ({txtServerIP.Text}) and Port ({txtServerPort.Text}) are correct\n\nError: {sex.Message}", "Connection Failed",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             catch (Exception ex)
             {
                 lblStatus.Text = "Connection error";
@@ -416,10 +445,23 @@ namespace Server
 
                 var stopwatch = Stopwatch.StartNew();
 
-                // Connect to server
+                // Connect to server with timeout
                 using (TcpClient client = new TcpClient())
                 {
-                    client.Connect(serverIP, serverPort);
+                    // Set connection timeout
+                    var result = client.BeginConnect(serverIP, serverPort, null, null);
+                    var success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+                    
+                    if (!success)
+                    {
+                        throw new Exception("Connection timeout - server may not be running");
+                    }
+                    
+                    client.EndConnect(result);
+                    
+                    // Set read/write timeouts
+                    client.ReceiveTimeout = 30000; // 30 seconds
+                    client.SendTimeout = 10000; // 10 seconds
 
                     using (StreamReader reader = new StreamReader(client.GetStream()))
                     using (StreamWriter writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
@@ -484,6 +526,22 @@ namespace Server
                         }
                     }
                 }
+            }
+            catch (TimeoutException tex)
+            {
+                lblStatus.Text = "Connection timeout";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Timeout: {tex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection timeout. Please ensure:\n1. Server is running\n2. Server IP and Port are correct\n3. Firewall is not blocking the connection", "Connection Timeout",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (System.Net.Sockets.SocketException sex)
+            {
+                lblStatus.Text = "Connection failed";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Connection failed: {sex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection failed. Please ensure:\n1. Server is running\n2. Server IP ({txtServerIP.Text}) and Port ({txtServerPort.Text}) are correct\n\nError: {sex.Message}", "Connection Failed",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             catch (Exception ex)
             {
