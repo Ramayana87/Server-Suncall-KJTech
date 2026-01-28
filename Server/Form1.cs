@@ -332,7 +332,7 @@ namespace Server
                             }
                             
                             // Year range check - quick filter before creating DateTime
-                            if (data.vYear < minYear || data.vYear > maxYear || data.vYear < 2024)
+                            if (data.vYear < minYear || data.vYear > maxYear)
                             {
                                 skippedCount++;
                                 continue;
@@ -343,7 +343,7 @@ namespace Server
                             {
                                 DateTime inputDate = new DateTime(data.vYear, data.vMonth, data.vDay, data.vHour, data.vMinute, data.vSecond & 0xFF);
                                 
-                                // Date range filtering
+                                // Date range filtering (inclusive)
                                 if (inputDate < fromDate || inputDate > toDate)
                                 {
                                     skippedCount++;
@@ -354,9 +354,10 @@ namespace Server
                                 lstData.Add(data);
                                 i++;
                             }
-                            catch (ArgumentOutOfRangeException)
+                            catch (Exception ex)
                             {
-                                // Invalid date, skip this record
+                                // Invalid date, skip this record and log
+                                Logging.Write(Logging.WATCH, "getData", $"Skipped invalid date: Year={data.vYear}, Month={data.vMonth}, Day={data.vDay}, Hour={data.vHour}, Minute={data.vMinute}, Second={data.vSecond}, Error={ex.Message}");
                                 skippedCount++;
                                 continue;
                             }

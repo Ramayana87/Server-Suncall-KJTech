@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Sockets;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 
 namespace ClientExample
@@ -25,54 +27,63 @@ namespace ClientExample
         /// Get attendance data for a specific date range (OPTIMIZED VERSION)
         /// Lấy dữ liệu chấm công theo khoảng thời gian (PHIÊN BẢN TỐI ƯU)
         /// </summary>
-        public List<GLogData> GetAttendanceData(int machineNumber, string deviceIP, int devicePort, DateTime fromDate, DateTime toDate)
+        public async Task<List<GLogData>> GetAttendanceDataAsync(int machineNumber, string deviceIP, int devicePort, DateTime fromDate, DateTime toDate)
         {
-            TcpClient client = null;
-            try
+            return await Task.Run(() =>
             {
-                // Connect to server
-                client = new TcpClient();
-                client.Connect(serverIP, serverPort);
-
-                var reader = new StreamReader(client.GetStream());
-                var writer = new StreamWriter(client.GetStream());
-                writer.AutoFlush = true;
-
-                // NEW FORMAT: Include date range parameters for server-side filtering
-                // FORMAT MỚI: Bao gồm tham số khoảng thời gian để server lọc dữ liệu
-                string request = $"{machineNumber}|{deviceIP}|{devicePort}|{fromDate:yyyy-MM-dd HH:mm:ss}|{toDate:yyyy-MM-dd HH:mm:ss}";
-                
-                Console.WriteLine($"Sending request: {request}");
-                writer.WriteLine(request);
-
-                // Read response
-                string jsonData = reader.ReadLine();
-                string exitSignal = reader.ReadLine(); // Should be "EXIT"
-
-                if (string.IsNullOrEmpty(jsonData) || exitSignal != "EXIT")
+                TcpClient client = null;
+                try
                 {
-                    throw new Exception("Invalid response from server");
+                    // Connect to server
+                    client = new TcpClient();
+                    client.Connect(serverIP, serverPort);
+
+                    var reader = new StreamReader(client.GetStream());
+                    var writer = new StreamWriter(client.GetStream());
+                    writer.AutoFlush = true;
+
+                    // NEW FORMAT: Include date range parameters for server-side filtering
+                    // FORMAT MỚI: Bao gồm tham số khoảng thời gian để server lọc dữ liệu
+                    string request = $"{machineNumber}|{deviceIP}|{devicePort}|{fromDate:yyyy-MM-dd HH:mm:ss}|{toDate:yyyy-MM-dd HH:mm:ss}";
+                    
+                    Console.WriteLine($"Sending request: {request}");
+                    writer.WriteLine(request);
+
+                    // Read response
+                    string jsonData = reader.ReadLine();
+                    string exitSignal = reader.ReadLine(); // Should be "EXIT"
+
+                    if (string.IsNullOrEmpty(jsonData) || exitSignal != "EXIT")
+                    {
+                        throw new Exception("Invalid response from server");
+                    }
+
+                    // Deserialize JSON response
+                    var data = JsonConvert.DeserializeObject<List<GLogData>>(jsonData);
+                    Console.WriteLine($"Received {data?.Count ?? 0} records");
+
+                    return data ?? new List<GLogData>();
                 }
-
-                // Deserialize JSON response
-                var data = JsonConvert.DeserializeObject<List<GLogData>>(jsonData);
-                Console.WriteLine($"Received {data?.Count ?? 0} records");
-
-                return data ?? new List<GLogData>();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error: {ex.Message}");
-                return new List<GLogData>();
-            }
-            finally
-            {
-                client?.Close();
-            }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error: {ex.Message}");
+                    return new List<GLogData>();
+                }
+                finally
+                {
+                    client?.Close();
+                }
+            });
         }
 
         /// <summary>
-        /// Get attendance data for the last N days (convenience method)
+        /// Get attendance data for a specific date range (synchronous version)
+        /// Lấy dữ liệu chấm công theo khoảng thời gian (phiên bản đồng bộ)
+        /// </summary>
+        public List<GLogData> GetAttendanceData(int machineNumber, string deviceIP, int devicePort, DateTime fromDate, DateTime toDate)
+        {
+            return GetAttendanceDataAsync(machineNumber, deviceIP, devicePort, fromDate, toDate).Result;
+        }
         /// Lấy dữ liệu chấm công N ngày gần nhất (phương thức tiện lợi)
         /// </summary>
         public List<GLogData> GetRecentAttendanceData(int machineNumber, string deviceIP, int devicePort, int lastNDays = 7)

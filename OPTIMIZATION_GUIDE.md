@@ -111,7 +111,7 @@ private async Task<List<GLogData>> GetAttendanceDataAsync(int machineNumber, str
     return await Task.Run(() => {
         // Socket connection and data retrieval code
         TcpClient client = new TcpClient();
-        await client.ConnectAsync(ip, port);
+        client.Connect(serverIP, serverPort);
         
         // ... rest of the code
         
@@ -164,9 +164,9 @@ public void Disconnect()
 ## Lưu ý / Notes
 
 1. Server mặc định lọc dữ liệu từ 30 ngày gần nhất nếu client không gửi date parameters
-2. Tất cả records phải có vYear >= 2024 (hardcoded filter)
+2. Server sử dụng date range filtering - không có hardcoded year limit
 3. Chỉ lấy records có vGranted == 1 (approved entries)
-4. Invalid dates sẽ được skip tự động
+4. Invalid dates sẽ được skip tự động và ghi log
 
 ## Contact
 Để hỗ trợ thêm hoặc báo cáo vấn đề, vui lòng tạo issue trên GitHub repository.
