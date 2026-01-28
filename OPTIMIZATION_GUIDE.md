@@ -66,7 +66,7 @@ Server bây giờ sẽ:
 3. Nếu cache hit → Trả về ngay (< 100ms)
 4. Nếu cache miss → Kết nối đến máy chấm công
 5. Lấy dữ liệu từ máy (API không hỗ trợ tham số thời gian)
-6. **Lọc dữ liệu theo khoảng thời gian trên server**
+6. Lọc dữ liệu theo khoảng thời gian trên server
 7. Lưu vào cache (TTL: 24h)
 8. Trả về dữ liệu đã lọc cho client
 
@@ -76,9 +76,9 @@ The server will now:
 3. If cache hit → Return immediately (< 100ms)
 4. If cache miss → Connect to the attendance machine
 5. Fetch data from machine (API doesn't support time parameters)
-6. **Filter data by date range on the server**
+6. Filter data by date range on the server
 7. Save to cache (TTL: 24h)
-8. Return only filtered data to client
+8. Return filtered data to client
 4. Return only filtered data to client
 
 ### 3. Hiệu Suất / Performance

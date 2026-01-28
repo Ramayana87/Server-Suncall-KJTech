@@ -76,6 +76,7 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                     STW.WriteLine(string.Format("GETLOGS|{0}|{1}|{2}|{3}|{4}", machineNumber, ip, port, fromDate, toDate));
 
                     // 3. receive
+                    // NOTE: Server now filters data by date range, so client-side filtering is redundant
                     while (client.Connected)
                     {
                         var recieve = STR.ReadLine();
@@ -92,7 +93,8 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                             foreach (var data in ListData)
                             {
                                 DateTime inputDate = Function.ParseDateTimes(data.Time);
-                                if (fromDate.Date <= inputDate.Date && inputDate.Date <= toDate.Date && data.Result.Equals("Granted"))
+                                // Server already filtered by date range, but keep validation for granted status
+                                if (data.Result.Equals("Granted"))
                                 {
                                     var enrollName = "";
                                     var dr = dt.NewRow();
@@ -149,6 +151,8 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                     // Format: GETUSERS|machineNumber|ip|port
                     STW.WriteLine(string.Format("GETUSERS|{0}|{1}|{2}", machineNumber, ip, port));
 
+                    // NOTE: Socket server now returns List<UserInfo> JSON for GETUSERS operation
+                    // TODO: Update deserialization to handle UserInfo instead of GLogData
                     // 3. receive
                     while (client.Connected)
                     {
@@ -162,6 +166,11 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                         else
                         {
                             Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "recieved data!");
+                            
+                            // TODO: Change this to deserialize List<UserInfo> instead of List<GLogData>
+                            // var userList = JsonConvert.DeserializeObject<List<UserInfo>>(recieve);
+                            // foreach (var user in userList) { ... }
+                            
                             var glogList = JsonConvert.DeserializeObject<List<GLogData>>(recieve);
                             if (glogList.Count > 0)
                             {

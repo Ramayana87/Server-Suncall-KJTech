@@ -15,6 +15,8 @@ namespace Server
     public partial class Form1 : Form
     {
         private const int MAX_CONNECTION = 10;
+        private const int MAX_CACHE_ENTRIES = 100;
+        private const int CACHE_TTL_HOURS = 24;
         private bool statusOpen = true;
         private TcpListener listener;
         
@@ -221,8 +223,9 @@ namespace Server
                             
                             if (fromDate.HasValue && toDate.HasValue)
                             {
-                                logData = GetCachedAttendanceData(machineNumber, ip, port, fromDate.Value, toDate.Value);
-                                fromCache = logData.Count > 0;
+                                var cacheResult = GetCachedAttendanceData(machineNumber, ip, port, fromDate.Value, toDate.Value);
+                                logData = cacheResult.Item1;
+                                fromCache = cacheResult.Item2;
                             }
                             
                             if (logData == null || !fromCache)
@@ -230,7 +233,7 @@ namespace Server
                                 logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
                                 
                                 // Cache the data if date range is specified
-                                if (fromDate.HasValue && toDate.HasValue && logData.Count > 0)
+                                if (fromDate.HasValue && toDate.HasValue)
                                 {
                                     CacheAttendanceData(machineNumber, ip, port, logData, fromDate.Value, toDate.Value);
                                 }
@@ -436,52 +439,57 @@ namespace Server
                     return userList;
                 }
 
-                bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
-                Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Start reading: {GetErrorString()}");
-
-                success = SFC3KPC1.ReadGeneralLogData(machineNumber);
-                Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Read result: {GetErrorString()}");
-
-                if (success)
+                try
                 {
-                    HashSet<int> uniqueUsers = new HashSet<int>();
-                    
-                    while (true)
+                    bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
+                    Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Start reading: {GetErrorString()}");
+
+                    success = SFC3KPC1.ReadGeneralLogData(machineNumber);
+                    Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Read result: {GetErrorString()}");
+
+                    if (success)
                     {
-                        GLogData data = new GLogData();
-                        success = SFC3KPC1.GetGeneralLogData(machineNumber,
-                            ref data.vEnrollNumber, ref data.vGranted, ref data.vMethod,
-                            ref data.vDoorMode, ref data.vFunNumber, ref data.vSensor,
-                            ref data.vYear, ref data.vMonth, ref data.vDay,
-                            ref data.vHour, ref data.vMinute, ref data.vSecond);
-
-                        if (!success) break;
-
-                        // Only include granted users with fingerprint method
-                        if (data.EnrollNumber > 0 && data.vGranted == 1)
+                        HashSet<int> uniqueUsers = new HashSet<int>();
+                        
+                        while (true)
                         {
-                            // Check if it's fingerprint authentication
-                            int vmmode = data.vMethod & (Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP);
-                            bool isFingerprintAuth = (vmmode & Constants.GLOG_BY_FP) == Constants.GLOG_BY_FP;
-                            
-                            if (isFingerprintAuth && !uniqueUsers.Contains(data.EnrollNumber))
+                            GLogData data = new GLogData();
+                            success = SFC3KPC1.GetGeneralLogData(machineNumber,
+                                ref data.vEnrollNumber, ref data.vGranted, ref data.vMethod,
+                                ref data.vDoorMode, ref data.vFunNumber, ref data.vSensor,
+                                ref data.vYear, ref data.vMonth, ref data.vDay,
+                                ref data.vHour, ref data.vMinute, ref data.vSecond);
+
+                            if (!success) break;
+
+                            // Only include granted users with fingerprint method
+                            if (data.EnrollNumber > 0 && data.vGranted == 1)
                             {
-                                uniqueUsers.Add(data.EnrollNumber);
-                                userList.Add(new UserInfo
+                                // Check if it's fingerprint authentication
+                                int vmmode = data.vMethod & (Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP);
+                                bool isFingerprintAuth = (vmmode & Constants.GLOG_BY_FP) == Constants.GLOG_BY_FP;
+                                
+                                if (isFingerprintAuth && !uniqueUsers.Contains(data.EnrollNumber))
                                 {
-                                    MachineNo = machineNumber,
-                                    EnrollNo = data.EnrollNumber,
-                                    EnrollName = ""
-                                });
+                                    uniqueUsers.Add(data.EnrollNumber);
+                                    userList.Add(new UserInfo
+                                    {
+                                        MachineNo = machineNumber,
+                                        EnrollNo = data.EnrollNumber,
+                                        EnrollName = ""
+                                    });
+                                }
                             }
                         }
+
+                        Logging.Write(Logging.WATCH, "GetDistinctUsers", 
+                            $"Successfully read {userList.Count} distinct users");
                     }
-
-                    Logging.Write(Logging.WATCH, "GetDistinctUsers", 
-                        $"Successfully read {userList.Count} distinct users");
                 }
-
-                SFC3KPC1.Disconnect(machineNumber);
+                finally
+                {
+                    SFC3KPC1.Disconnect(machineNumber);
+                }
             }
             catch (Exception ex)
             {
@@ -491,7 +499,7 @@ namespace Server
             return userList;
         }
 
-        private List<GLogData> GetCachedAttendanceData(int machineNumber, string ip, int port, DateTime fromDate, DateTime toDate)
+        private Tuple<List<GLogData>, bool> GetCachedAttendanceData(int machineNumber, string ip, int port, DateTime fromDate, DateTime toDate)
         {
             string cacheKey = GenerateCacheKey(machineNumber, ip, port, fromDate, toDate);
             
@@ -499,12 +507,12 @@ namespace Server
             {
                 if (attendanceCache.TryGetValue(cacheKey, out CachedAttendanceData cached))
                 {
-                    // Check if cache is still valid (not older than 24 hours)
-                    if ((DateTime.Now - cached.CachedTime).TotalHours < 24)
+                    // Check if cache is still valid (not older than CACHE_TTL_HOURS)
+                    if ((DateTime.Now - cached.CachedTime).TotalHours < CACHE_TTL_HOURS)
                     {
                         Logging.Write(Logging.WATCH, "GetCachedAttendanceData", 
                             $"Cache hit for key: {cacheKey}, records: {cached.Data.Count}");
-                        return new List<GLogData>(cached.Data);
+                        return Tuple.Create(new List<GLogData>(cached.Data), true);
                     }
                     else
                     {
@@ -515,7 +523,7 @@ namespace Server
                 }
             }
             
-            return new List<GLogData>();
+            return Tuple.Create(new List<GLogData>(), false);
         }
 
         private void CacheAttendanceData(int machineNumber, string ip, int port, List<GLogData> data, DateTime fromDate, DateTime toDate)
@@ -536,14 +544,30 @@ namespace Server
                 Logging.Write(Logging.WATCH, "CacheAttendanceData", 
                     $"Cached {data.Count} records for key: {cacheKey}");
                     
-                // Cleanup old cache entries (keep only last 100)
-                if (attendanceCache.Count > 100)
+                // Cleanup old cache entries (keep only MAX_CACHE_ENTRIES)
+                if (attendanceCache.Count > MAX_CACHE_ENTRIES)
                 {
-                    var oldestKey = attendanceCache
-                        .OrderBy(x => x.Value.CachedTime)
-                        .First().Key;
-                    attendanceCache.Remove(oldestKey);
-                    Logging.Write(Logging.WATCH, "CacheAttendanceData", $"Removed old cache entry: {oldestKey}");
+                    // First try to remove expired entries
+                    var expiredKeys = attendanceCache
+                        .Where(x => (DateTime.Now - x.Value.CachedTime).TotalHours >= CACHE_TTL_HOURS)
+                        .Select(x => x.Key)
+                        .ToList();
+                    
+                    foreach (var key in expiredKeys)
+                    {
+                        attendanceCache.Remove(key);
+                        Logging.Write(Logging.WATCH, "CacheAttendanceData", $"Removed expired cache entry: {key}");
+                    }
+                    
+                    // If still over limit, remove oldest entries
+                    while (attendanceCache.Count > MAX_CACHE_ENTRIES)
+                    {
+                        var oldestKey = attendanceCache
+                            .OrderBy(x => x.Value.CachedTime)
+                            .First().Key;
+                        attendanceCache.Remove(oldestKey);
+                        Logging.Write(Logging.WATCH, "CacheAttendanceData", $"Removed old cache entry: {oldestKey}");
+                    }
                 }
             }
         }
