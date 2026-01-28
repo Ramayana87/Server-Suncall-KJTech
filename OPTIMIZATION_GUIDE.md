@@ -90,6 +90,7 @@ Server.exe test
    - Click "Load Mockup Data from Files"
    - Data từ thư mục "data mockup" sẽ được load (4 files, 670k+ lines)
    - Xem log để biết số lượng records đã load
+   - **Lưu ý:** Data files có tab ở đầu mỗi dòng, parser đã được cập nhật để xử lý đúng
 
 2. **Test Filtering trên Mockup**
    - Chọn khoảng thời gian (From Date - To Date)
@@ -97,10 +98,15 @@ Server.exe test
    - Xem log: số records trước/sau khi lọc, thời gian xử lý
 
 3. **Test Server Connection**
-   - Đảm bảo Server đang chạy
+   - Form sẽ tự động điền Server IP (local IP như server)
+   - Nhập thông tin máy chấm công:
+     - Machine Number (mặc định: 1)
+     - Machine IP (mặc định: 192.168.1.201)
+     - Machine Port (mặc định: 4370)
    - Chọn checkbox "Use Date Range Filter" (nếu muốn lọc)
    - Click "Test Server Connection"
    - Xem log: số records nhận được, thời gian, kích thước dữ liệu
+   - **Response JSON sẽ được lưu vào file:** `Log/ServerResponse_[timestamp].json`
 
 ### C. Code Mẫu Client / Sample Client Code
 
