@@ -41,7 +41,11 @@ namespace Server
 
                     await semaphore.WaitAsync();
 
-                    await File.AppendAllTextAsync(logFile, logMessage, Encoding.UTF8);
+                    using (var fileStream = new FileStream(logFile, FileMode.Append, FileAccess.Write, FileShare.Read, 4096, true))
+                    using (var writer = new StreamWriter(fileStream, Encoding.UTF8))
+                    {
+                        await writer.WriteAsync(logMessage);
+                    }
                 }
                 catch { }
                 finally
@@ -79,7 +83,11 @@ namespace Server
 
                     await semaphore.WaitAsync();
 
-                    await File.AppendAllTextAsync(logFile, logMessage, Encoding.UTF8);
+                    using (var fileStream = new FileStream(logFile, FileMode.Append, FileAccess.Write, FileShare.Read, 4096, true))
+                    using (var writer = new StreamWriter(fileStream, Encoding.UTF8))
+                    {
+                        await writer.WriteAsync(logMessage);
+                    }
                 }
                 catch { }
                 finally
