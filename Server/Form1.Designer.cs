@@ -15,8 +15,20 @@
         {
             if (disposing)
             {
-                statusOpen = false;
-                listener?.Stop();
+                // Cleanup should be done before dispose to avoid cross-thread issues
+                try
+                {
+                    statusOpen = false;
+                    if (listener != null)
+                    {
+                        listener.Stop();
+                        listener = null;
+                    }
+                }
+                catch
+                {
+                    // Ignore errors during disposal
+                }
                 
                 components?.Dispose();
             }

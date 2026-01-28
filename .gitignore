@@ -19,8 +19,6 @@ x86/
 bld/
 [Bb]in/
 [Oo]bj/
-[Ll]og/
-[Ll]ogs/
 
 # User-specific files
 *.rsuser
@@ -35,6 +33,6 @@ bld/
 *.pdb
 *.cache
 
-# Log files
-*.log
-*.txt
+# Log files (only in Log directory)
+[Ll]og/**/*.txt
+[Ll]og/**/*.log
