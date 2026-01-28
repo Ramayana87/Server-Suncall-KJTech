@@ -17,6 +17,10 @@ namespace Server
         private const int MAX_CONNECTION = 10;
         private bool statusOpen = true;
         private TcpListener listener;
+        
+        // Cache for attendance data: key = "machineNumber_ip_port_fromDate_toDate"
+        private static Dictionary<string, CachedAttendanceData> attendanceCache = new Dictionary<string, CachedAttendanceData>();
+        private static object cacheLock = new object();
 
         public Form1()
         {
@@ -158,43 +162,94 @@ namespace Server
                     UpdateStatus("Connected", Color.Green);
 
                     var parameters = received.Split('|').ToList();
-                    if (parameters.Count >= 3)
+                    
+                    // Check if first parameter is an operation type (GETLOGS, GETUSERS)
+                    string operation = "GETLOGS"; // default operation for backward compatibility
+                    int paramOffset = 0;
+                    
+                    if (parameters.Count > 0)
                     {
-                        int machineNumber = ParseInt(parameters[0]);
-                        string ip = SafeToString(parameters[1]);
-                        int port = ParseInt(parameters[2]);
-                        
-                        // Optional date filtering parameters
-                        DateTime? fromDate = null;
-                        DateTime? toDate = null;
-                        
-                        if (parameters.Count >= 4 && !string.IsNullOrEmpty(SafeToString(parameters[3])))
+                        string firstParam = SafeToString(parameters[0]).ToUpper();
+                        if (firstParam == "GETLOGS" || firstParam == "GETUSERS")
                         {
-                            if (DateTime.TryParse(parameters[3], out DateTime parsedFrom))
-                                fromDate = parsedFrom;
+                            operation = firstParam;
+                            paramOffset = 1;
                         }
+                    }
+                    
+                    if (parameters.Count >= 3 + paramOffset)
+                    {
+                        int machineNumber = ParseInt(parameters[0 + paramOffset]);
+                        string ip = SafeToString(parameters[1 + paramOffset]);
+                        int port = ParseInt(parameters[2 + paramOffset]);
                         
-                        if (parameters.Count >= 5 && !string.IsNullOrEmpty(SafeToString(parameters[4])))
-                        {
-                            if (DateTime.TryParse(parameters[4], out DateTime parsedTo))
-                                toDate = parsedTo;
-                        }
-
                         var stopwatch = Stopwatch.StartNew();
-                        List<GLogData> logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
-                        stopwatch.Stop();
                         
-                        string jsonData = JsonConvert.SerializeObject(logData);
-                        
-                        writer.WriteLine(jsonData);
-                        writer.WriteLine("EXIT");
+                        if (operation == "GETUSERS")
+                        {
+                            // Get distinct users from biometric device
+                            List<UserInfo> users = GetDistinctUsers(machineNumber, ip, port);
+                            stopwatch.Stop();
+                            
+                            string jsonData = JsonConvert.SerializeObject(users);
+                            writer.WriteLine(jsonData);
+                            writer.WriteLine("EXIT");
+                            
+                            AppendLog($"[GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                        }
+                        else // GETLOGS
+                        {
+                            // Optional date filtering parameters
+                            DateTime? fromDate = null;
+                            DateTime? toDate = null;
+                            
+                            if (parameters.Count >= 4 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[3 + paramOffset])))
+                            {
+                                if (DateTime.TryParse(parameters[3 + paramOffset], out DateTime parsedFrom))
+                                    fromDate = parsedFrom;
+                            }
+                            
+                            if (parameters.Count >= 5 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[4 + paramOffset])))
+                            {
+                                if (DateTime.TryParse(parameters[4 + paramOffset], out DateTime parsedTo))
+                                    toDate = parsedTo;
+                            }
 
-                        AppendLog($"Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
+                            // Check cache first if date range is specified
+                            List<GLogData> logData = null;
+                            bool fromCache = false;
+                            
+                            if (fromDate.HasValue && toDate.HasValue)
+                            {
+                                logData = GetCachedAttendanceData(machineNumber, ip, port, fromDate.Value, toDate.Value);
+                                fromCache = logData.Count > 0;
+                            }
+                            
+                            if (logData == null || !fromCache)
+                            {
+                                logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
+                                
+                                // Cache the data if date range is specified
+                                if (fromDate.HasValue && toDate.HasValue && logData.Count > 0)
+                                {
+                                    CacheAttendanceData(machineNumber, ip, port, logData, fromDate.Value, toDate.Value);
+                                }
+                            }
+                            
+                            stopwatch.Stop();
+                            
+                            string jsonData = JsonConvert.SerializeObject(logData);
+                            writer.WriteLine(jsonData);
+                            writer.WriteLine("EXIT");
+
+                            string cacheInfo = fromCache ? " (from cache)" : "";
+                            AppendLog($"[GETLOGS] Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms{cacheInfo}");
+                        }
                     }
                     else
                     {
                         AppendLog("Invalid request format");
-                        writer.WriteLine("ERROR: Invalid format");
+                        writer.WriteLine("ERROR: Invalid format. Use: [OPERATION|]machineNumber|ip|port[|fromDate|toDate]");
                         writer.WriteLine("EXIT");
                     }
                 }
@@ -367,6 +422,135 @@ namespace Server
             }
 
             return logDataList;
+        }
+
+        private List<UserInfo> GetDistinctUsers(int machineNumber, string ip, int port)
+        {
+            List<UserInfo> userList = new List<UserInfo>();
+
+            try
+            {
+                if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
+                {
+                    Logging.Write(Logging.ERROR, "GetDistinctUsers", "Failed to connect to device");
+                    return userList;
+                }
+
+                bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
+                Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Start reading: {GetErrorString()}");
+
+                success = SFC3KPC1.ReadGeneralLogData(machineNumber);
+                Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Read result: {GetErrorString()}");
+
+                if (success)
+                {
+                    HashSet<int> uniqueUsers = new HashSet<int>();
+                    
+                    while (true)
+                    {
+                        GLogData data = new GLogData();
+                        success = SFC3KPC1.GetGeneralLogData(machineNumber,
+                            ref data.vEnrollNumber, ref data.vGranted, ref data.vMethod,
+                            ref data.vDoorMode, ref data.vFunNumber, ref data.vSensor,
+                            ref data.vYear, ref data.vMonth, ref data.vDay,
+                            ref data.vHour, ref data.vMinute, ref data.vSecond);
+
+                        if (!success) break;
+
+                        // Only include granted users with fingerprint method
+                        if (data.EnrollNumber > 0 && data.vGranted == 1)
+                        {
+                            // Check if it's fingerprint authentication
+                            int vmmode = data.vMethod & (Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP);
+                            bool isFingerprintAuth = (vmmode & Constants.GLOG_BY_FP) == Constants.GLOG_BY_FP;
+                            
+                            if (isFingerprintAuth && !uniqueUsers.Contains(data.EnrollNumber))
+                            {
+                                uniqueUsers.Add(data.EnrollNumber);
+                                userList.Add(new UserInfo
+                                {
+                                    MachineNo = machineNumber,
+                                    EnrollNo = data.EnrollNumber,
+                                    EnrollName = ""
+                                });
+                            }
+                        }
+                    }
+
+                    Logging.Write(Logging.WATCH, "GetDistinctUsers", 
+                        $"Successfully read {userList.Count} distinct users");
+                }
+
+                SFC3KPC1.Disconnect(machineNumber);
+            }
+            catch (Exception ex)
+            {
+                Logging.Write(Logging.ERROR, "GetDistinctUsers", ex.Message);
+            }
+
+            return userList;
+        }
+
+        private List<GLogData> GetCachedAttendanceData(int machineNumber, string ip, int port, DateTime fromDate, DateTime toDate)
+        {
+            string cacheKey = GenerateCacheKey(machineNumber, ip, port, fromDate, toDate);
+            
+            lock (cacheLock)
+            {
+                if (attendanceCache.TryGetValue(cacheKey, out CachedAttendanceData cached))
+                {
+                    // Check if cache is still valid (not older than 24 hours)
+                    if ((DateTime.Now - cached.CachedTime).TotalHours < 24)
+                    {
+                        Logging.Write(Logging.WATCH, "GetCachedAttendanceData", 
+                            $"Cache hit for key: {cacheKey}, records: {cached.Data.Count}");
+                        return new List<GLogData>(cached.Data);
+                    }
+                    else
+                    {
+                        // Remove expired cache
+                        attendanceCache.Remove(cacheKey);
+                        Logging.Write(Logging.WATCH, "GetCachedAttendanceData", $"Cache expired for key: {cacheKey}");
+                    }
+                }
+            }
+            
+            return new List<GLogData>();
+        }
+
+        private void CacheAttendanceData(int machineNumber, string ip, int port, List<GLogData> data, DateTime fromDate, DateTime toDate)
+        {
+            string cacheKey = GenerateCacheKey(machineNumber, ip, port, fromDate, toDate);
+            
+            lock (cacheLock)
+            {
+                var cachedData = new CachedAttendanceData
+                {
+                    Data = new List<GLogData>(data),
+                    CachedTime = DateTime.Now,
+                    FromDate = fromDate,
+                    ToDate = toDate
+                };
+                
+                attendanceCache[cacheKey] = cachedData;
+                Logging.Write(Logging.WATCH, "CacheAttendanceData", 
+                    $"Cached {data.Count} records for key: {cacheKey}");
+                    
+                // Cleanup old cache entries (keep only last 100)
+                if (attendanceCache.Count > 100)
+                {
+                    var oldestKey = attendanceCache
+                        .OrderBy(x => x.Value.CachedTime)
+                        .First().Key;
+                    attendanceCache.Remove(oldestKey);
+                    Logging.Write(Logging.WATCH, "CacheAttendanceData", $"Removed old cache entry: {oldestKey}");
+                }
+            }
+        }
+
+        private string GenerateCacheKey(int machineNumber, string ip, int port, DateTime fromDate, DateTime toDate)
+        {
+            return $"{machineNumber}_{ip}_{port}_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}";
         }
 
         public static string SafeToString(object obj)
@@ -572,5 +756,20 @@ namespace Server
         {
             get { return ((vSecond >> 8) & 0xFF) == 1; }
         }
+    }
+
+    public class UserInfo
+    {
+        public int MachineNo { get; set; }
+        public int EnrollNo { get; set; }
+        public string EnrollName { get; set; }
+    }
+
+    public class CachedAttendanceData
+    {
+        public List<GLogData> Data { get; set; }
+        public DateTime CachedTime { get; set; }
+        public DateTime FromDate { get; set; }
+        public DateTime ToDate { get; set; }
     }
 }

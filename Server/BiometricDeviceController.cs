@@ -15,6 +15,31 @@ using System.Linq;
 
 namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
 {
+    /// <summary>
+    /// BiometricDeviceController - Optimized version
+    /// 
+    /// OPTIMIZATION NOTES:
+    /// 1. Socket Server Operation Types:
+    ///    - The socket server now supports operation type parameters:
+    ///      * GETLOGS|machineNumber|ip|port|fromDate|toDate - Get attendance logs (GetLogDataTable)
+    ///      * GETUSERS|machineNumber|ip|port - Get distinct users (GetAllUserTable)
+    ///    - Backward compatible: machineNumber|ip|port|fromDate|toDate (defaults to GETLOGS)
+    /// 
+    /// 2. Database Caching:
+    ///    - Attendance data is cached in memory on the socket server
+    ///    - Cache key: machineNumber_ip_port_fromDate_toDate
+    ///    - Cache validity: 24 hours
+    ///    - For HANA database integration, implement caching in this controller using UnitOfWork
+    /// 
+    /// 3. Performance Improvements:
+    ///    - Reduced redundant queries to biometric devices
+    ///    - Faster response times for repeated requests
+    ///    - Server-side filtering reduces network traffic
+    /// 
+    /// USAGE:
+    /// - GetLogDataTable: Use GETLOGS operation with date range
+    /// - GetAllUserTable: Use GETUSERS operation (no date range needed)
+    /// </summary>
     public class BiometricDeviceController : BaseApiController
     {
 
@@ -46,8 +71,9 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                     STW.AutoFlush = true;
                     Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Connected to socket server!");
 
-                    // 2. send
-                    STW.WriteLine(string.Format("{0}|{1}|{2}|{3}|{4}", machineNumber, ip, port, fromDate, toDate));
+                    // OPTIMIZATION: Use GETLOGS operation type for clarity and server-side caching
+                    // Format: GETLOGS|machineNumber|ip|port|fromDate|toDate
+                    STW.WriteLine(string.Format("GETLOGS|{0}|{1}|{2}|{3}|{4}", machineNumber, ip, port, fromDate, toDate));
 
                     // 3. receive
                     while (client.Connected)
@@ -119,8 +145,9 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                     STW.AutoFlush = true;
                     Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Connected to socket server!");
 
-                    // 2. send
-                    STW.WriteLine(string.Format("{0}|{1}|{2}", machineNumber, ip, port));
+                    // OPTIMIZATION: Use GETUSERS operation type for clarity
+                    // Format: GETUSERS|machineNumber|ip|port
+                    STW.WriteLine(string.Format("GETUSERS|{0}|{1}|{2}", machineNumber, ip, port));
 
                     // 3. receive
                     while (client.Connected)
