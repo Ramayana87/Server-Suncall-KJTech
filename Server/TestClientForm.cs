@@ -222,6 +222,10 @@ namespace Server
 
                 lblStatus.Text = $"Filtered: {filteredData.Count:N0} of {mockupData.Count:N0} records";
                 lblStatus.ForeColor = Color.Green;
+
+                // ghi vào log
+                string jsonData = JsonConvert.SerializeObject(filteredData);
+                Logging.Write(Logging.WATCH, "Mockup filter test", jsonData);
             }
             catch (Exception ex)
             {
