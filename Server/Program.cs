@@ -9,11 +9,20 @@ namespace Server
         /// The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Form1());
+            
+            // Check command line arguments to determine which form to launch
+            if (args.Length > 0 && args[0].ToLower() == "test")
+            {
+                Application.Run(new TestClientForm());
+            }
+            else
+            {
+                Application.Run(new Form1());
+            }
         }
     }
 }
