@@ -223,7 +223,7 @@ namespace Server
                 lblStatus.Text = $"Filtered: {filteredData.Count:N0} of {mockupData.Count:N0} records";
                 lblStatus.ForeColor = Color.Green;
 
-                // ghi vào log
+                // ghi vï¿½o log
                 string jsonData = JsonConvert.SerializeObject(filteredData);
                 Logging.Write(Logging.WATCH, "Mockup filter test", jsonData);
             }
@@ -377,6 +377,126 @@ namespace Server
         private void btnClearLog_Click(object sender, EventArgs e)
         {
             txtLog.Clear();
+        }
+
+        private void btnTestServerMockup_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string serverIP = txtServerIP.Text.Trim();
+                string serverPortStr = txtServerPort.Text.Trim();
+                string machineNumberStr = txtMachineNumber.Text.Trim();
+
+                // Validate inputs
+                if (string.IsNullOrEmpty(serverIP))
+                {
+                    MessageBox.Show("Please enter server IP address", "Validation Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (!int.TryParse(serverPortStr, out int serverPort) || serverPort < 1 || serverPort > 65535)
+                {
+                    MessageBox.Show("Please enter a valid server port number (1-65535)", "Validation Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (!int.TryParse(machineNumberStr, out int machineNumber))
+                {
+                    MessageBox.Show("Please enter a valid machine number", "Validation Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                Cursor = Cursors.WaitCursor;
+                lblStatus.Text = "Connecting to server with mockup data request...";
+                lblStatus.ForeColor = Color.Blue;
+                Application.DoEvents();
+
+                var stopwatch = Stopwatch.StartNew();
+
+                // Connect to server
+                using (TcpClient client = new TcpClient())
+                {
+                    client.Connect(serverIP, serverPort);
+
+                    using (StreamReader reader = new StreamReader(client.GetStream()))
+                    using (StreamWriter writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
+                    {
+                        // Build request: MOCKUP_GETLOGS|machineNumber|dummy_ip|dummy_port|fromDate|toDate
+                        string fromDateStr = chkUseDateFilter.Checked ? dtpFrom.Value.ToString("yyyy-MM-dd HH:mm:ss") : "";
+                        string toDateStr = chkUseDateFilter.Checked ? dtpTo.Value.AddDays(1).AddSeconds(-1).ToString("yyyy-MM-dd HH:mm:ss") : "";
+
+                        string request = $"MOCKUP_GETLOGS|{machineNumber}|0.0.0.0|0|{fromDateStr}|{toDateStr}";
+
+                        txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Sending mockup request: {request}{Environment.NewLine}");
+                        writer.WriteLine(request);
+
+                        // Read response using StringBuilder for efficiency
+                        var responseBuilder = new System.Text.StringBuilder();
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            if (line == "EXIT") break;
+                            responseBuilder.Append(line);
+                        }
+
+                        string response = responseBuilder.ToString();
+                        stopwatch.Stop();
+
+                        if (response.StartsWith("ERROR"))
+                        {
+                            txtLog.AppendText($"  - Server error: {response}{Environment.NewLine}{Environment.NewLine}");
+                            lblStatus.Text = "Server returned error";
+                            lblStatus.ForeColor = Color.Red;
+                        }
+                        else
+                        {
+                            var data = JsonConvert.DeserializeObject<List<GLogData>>(response);
+
+                            txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Server response (mockup data):{Environment.NewLine}");
+                            txtLog.AppendText($"  - Records received: {data.Count:N0}{Environment.NewLine}");
+                            txtLog.AppendText($"  - Total time: {stopwatch.ElapsedMilliseconds}ms{Environment.NewLine}");
+                            txtLog.AppendText($"  - Data size: {response.Length / 1024:N0} KB{Environment.NewLine}{Environment.NewLine}");
+
+                            lblStatus.Text = $"Received {data.Count:N0} mockup records in {stopwatch.ElapsedMilliseconds}ms";
+                            lblStatus.ForeColor = Color.Green;
+
+                            // Save response to log file
+                            try
+                            {
+                                string logFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Log");
+                                if (!Directory.Exists(logFolder))
+                                {
+                                    Directory.CreateDirectory(logFolder);
+                                }
+
+                                string logFileName = Path.Combine(logFolder, $"ServerMockupResponse_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+                                File.WriteAllText(logFileName, response);
+
+                                txtLog.AppendText($"  - Saved response to: {logFileName}{Environment.NewLine}{Environment.NewLine}");
+                            }
+                            catch (Exception logEx)
+                            {
+                                txtLog.AppendText($"  - Warning: Could not save log file: {logEx.Message}{Environment.NewLine}{Environment.NewLine}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text = "Connection error";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Error: {ex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Error connecting to server: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+            }
         }
     }
 }

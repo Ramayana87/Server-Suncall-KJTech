@@ -159,14 +159,15 @@ namespace Server
 
                     var parameters = received.Split('|').ToList();
 
-                    // Check if first parameter is an operation type (GETLOGS, GETUSERS)
+                    // Check if first parameter is an operation type (GETLOGS, GETUSERS, MOCKUP_GETLOGS, MOCKUP_GETUSERS)
                     string operation = "GETLOGS"; // default operation for backward compatibility
                     int paramOffset = 0;
 
                     if (parameters.Count > 0)
                     {
                         string firstParam = SafeToString(parameters[0]).ToUpper();
-                        if (firstParam == "GETLOGS" || firstParam == "GETUSERS")
+                        if (firstParam == "GETLOGS" || firstParam == "GETUSERS" || 
+                            firstParam == "MOCKUP_GETLOGS" || firstParam == "MOCKUP_GETUSERS")
                         {
                             operation = firstParam;
                             paramOffset = 1;
@@ -192,6 +193,46 @@ namespace Server
                             writer.WriteLine("EXIT");
 
                             AppendLog($"[GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                        }
+                        else if (operation == "MOCKUP_GETUSERS")
+                        {
+                            // Get distinct users from mockup data file
+                            List<GLogData> users = GetMockupDistinctUsers(machineNumber);
+                            stopwatch.Stop();
+
+                            string jsonData = JsonConvert.SerializeObject(users);
+                            writer.WriteLine(jsonData);
+                            writer.WriteLine("EXIT");
+
+                            AppendLog($"[MOCKUP_GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                        }
+                        else if (operation == "MOCKUP_GETLOGS")
+                        {
+                            // Optional date filtering parameters
+                            DateTime? fromDate = null;
+                            DateTime? toDate = null;
+
+                            if (parameters.Count >= 4 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[3 + paramOffset])))
+                            {
+                                if (DateTime.TryParse(parameters[3 + paramOffset], out DateTime parsedFrom))
+                                    fromDate = parsedFrom;
+                            }
+
+                            if (parameters.Count >= 5 + paramOffset && !string.IsNullOrEmpty(SafeToString(parameters[4 + paramOffset])))
+                            {
+                                if (DateTime.TryParse(parameters[4 + paramOffset], out DateTime parsedTo))
+                                    toDate = parsedTo;
+                            }
+
+                            List<GLogData> logData = GetMockupAttendanceData(machineNumber, fromDate, toDate);
+                            stopwatch.Stop();
+
+                            string jsonData = JsonConvert.SerializeObject(logData);
+
+                            writer.WriteLine(jsonData);
+                            writer.WriteLine("EXIT");
+
+                            AppendLog($"[MOCKUP_GETLOGS] Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
                         }
                         else // GETLOGS
                         {
@@ -463,6 +504,244 @@ namespace Server
             catch (Exception ex)
             {
                 Logging.Write(Logging.ERROR, "GetDistinctUsers", ex.Message);
+            }
+
+            return userList;
+        }
+
+        private List<GLogData> GetMockupAttendanceData(int machineNumber, DateTime? fromDate = null, DateTime? toDate = null)
+        {
+            List<GLogData> logDataList = new List<GLogData>();
+
+            try
+            {
+                // Find mockup data folder
+                string currentDir = AppDomain.CurrentDomain.BaseDirectory;
+                string projectRoot = Directory.GetParent(currentDir).Parent.Parent.FullName;
+                string mockupDataFolder = Path.Combine(projectRoot, "data mockup");
+
+                // If not found, try current directory
+                if (!Directory.Exists(mockupDataFolder))
+                {
+                    mockupDataFolder = Path.Combine(currentDir, "data mockup");
+                }
+
+                // If still not found, try parent directory
+                if (!Directory.Exists(mockupDataFolder))
+                {
+                    mockupDataFolder = Path.Combine(Directory.GetParent(currentDir).FullName, "data mockup");
+                }
+
+                if (!Directory.Exists(mockupDataFolder))
+                {
+                    Logging.Write(Logging.ERROR, "GetMockupAttendanceData", $"Mockup data folder not found");
+                    return logDataList;
+                }
+
+                string fileName = $"may {machineNumber}.txt";
+                string filePath = Path.Combine(mockupDataFolder, fileName);
+
+                if (!File.Exists(filePath))
+                {
+                    Logging.Write(Logging.ERROR, "GetMockupAttendanceData", $"Mockup file not found: {fileName}");
+                    return logDataList;
+                }
+
+                var lines = File.ReadAllLines(filePath);
+                int recordNumber = 1;
+                int totalRecords = 0;
+                int filteredRecords = 0;
+                int invalidRecords = 0;
+
+                foreach (var line in lines)
+                {
+                    totalRecords++;
+                    var parts = line.Split('\t');
+                    if (parts.Length >= 9)
+                    {
+                        try
+                        {
+                            var data = new GLogData();
+
+                            // Parse line format: [empty], no, result, id, method, doormode, function, verification, time, captured
+                            // Note: First element is empty due to leading tab
+                            if (int.TryParse(parts[1].Trim(), out int no))
+                                data.no = recordNumber;
+
+                            string id = parts[3].Trim();
+                            if (int.TryParse(id, out int enrollNum))
+                                data.vEnrollNumber = enrollNum;
+
+                            data.vGranted = parts[2].Trim() == "Granted" ? 1 : 0;
+
+                            // Parse date time
+                            if (DateTime.TryParse(parts[8].Trim(), out DateTime recordTime))
+                            {
+                                data.vYear = recordTime.Year;
+                                data.vMonth = recordTime.Month;
+                                data.vDay = recordTime.Day;
+                                data.vHour = recordTime.Hour;
+                                data.vMinute = recordTime.Minute;
+                                data.vSecond = recordTime.Second & 0xFF;
+                            }
+
+                            // Filter invalid records (validate year is reasonable)
+                            if (data.EnrollNumber <= 0 || data.vGranted != 1 ||
+                                data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                            {
+                                invalidRecords++;
+                                continue;
+                            }
+
+                            // Apply date range filter if specified
+                            bool passesDateFilter = true;
+                            if (fromDate.HasValue || toDate.HasValue)
+                            {
+                                try
+                                {
+                                    DateTime recordDate = new DateTime(data.vYear, data.vMonth, data.vDay,
+                                        data.vHour, data.vMinute, data.vSecond & 0xFF);
+
+                                    if (fromDate.HasValue && recordDate < fromDate.Value)
+                                    {
+                                        passesDateFilter = false;
+                                    }
+                                    else if (toDate.HasValue && recordDate > toDate.Value)
+                                    {
+                                        passesDateFilter = false;
+                                    }
+
+                                    if (!passesDateFilter)
+                                    {
+                                        filteredRecords++;
+                                        continue;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    // Skip records with invalid dates
+                                    Logging.Write(Logging.WATCH, "GetMockupAttendanceData", $"Invalid date in record: {ex.Message}");
+                                    invalidRecords++;
+                                    continue;
+                                }
+                            }
+
+                            recordNumber++;
+                            logDataList.Add(data);
+                        }
+                        catch (Exception ex)
+                        {
+                            invalidRecords++;
+                            Logging.Write(Logging.ERROR, "GetMockupAttendanceData", $"Skipped invalid line: {ex.Message}");
+                        }
+                    }
+                }
+
+                string filterInfo = (fromDate.HasValue || toDate.HasValue)
+                    ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
+                    : $" (invalid {invalidRecords} from {totalRecords} total)";
+                Logging.Write(Logging.WATCH, "GetMockupAttendanceData",
+                    $"Successfully read {logDataList.Count} records from {fileName}{filterInfo}");
+            }
+            catch (Exception ex)
+            {
+                Logging.Write(Logging.ERROR, "GetMockupAttendanceData", ex.Message);
+            }
+
+            return logDataList;
+        }
+
+        private List<GLogData> GetMockupDistinctUsers(int machineNumber)
+        {
+            List<GLogData> userList = new List<GLogData>();
+
+            try
+            {
+                // Find mockup data folder
+                string currentDir = AppDomain.CurrentDomain.BaseDirectory;
+                string projectRoot = Directory.GetParent(currentDir).Parent.Parent.FullName;
+                string mockupDataFolder = Path.Combine(projectRoot, "data mockup");
+
+                // If not found, try current directory
+                if (!Directory.Exists(mockupDataFolder))
+                {
+                    mockupDataFolder = Path.Combine(currentDir, "data mockup");
+                }
+
+                // If still not found, try parent directory
+                if (!Directory.Exists(mockupDataFolder))
+                {
+                    mockupDataFolder = Path.Combine(Directory.GetParent(currentDir).FullName, "data mockup");
+                }
+
+                if (!Directory.Exists(mockupDataFolder))
+                {
+                    Logging.Write(Logging.ERROR, "GetMockupDistinctUsers", $"Mockup data folder not found");
+                    return userList;
+                }
+
+                string fileName = $"may {machineNumber}.txt";
+                string filePath = Path.Combine(mockupDataFolder, fileName);
+
+                if (!File.Exists(filePath))
+                {
+                    Logging.Write(Logging.ERROR, "GetMockupDistinctUsers", $"Mockup file not found: {fileName}");
+                    return userList;
+                }
+
+                var lines = File.ReadAllLines(filePath);
+                HashSet<int> uniqueUsers = new HashSet<int>();
+
+                foreach (var line in lines)
+                {
+                    var parts = line.Split('\t');
+                    if (parts.Length >= 9)
+                    {
+                        try
+                        {
+                            var data = new GLogData();
+
+                            // Parse line format: [empty], no, result, id, method, doormode, function, verification, time, captured
+                            string id = parts[3].Trim();
+                            if (int.TryParse(id, out int enrollNum))
+                                data.vEnrollNumber = enrollNum;
+
+                            data.vGranted = parts[2].Trim() == "Granted" ? 1 : 0;
+
+                            // Parse date time
+                            if (DateTime.TryParse(parts[8].Trim(), out DateTime recordTime))
+                            {
+                                data.vYear = recordTime.Year;
+                                data.vMonth = recordTime.Month;
+                                data.vDay = recordTime.Day;
+                                data.vHour = recordTime.Hour;
+                                data.vMinute = recordTime.Minute;
+                                data.vSecond = recordTime.Second & 0xFF;
+                            }
+
+                            // Only include granted users with valid enroll numbers
+                            if (data.EnrollNumber > 0 && data.vGranted == 1)
+                            {
+                                if (!uniqueUsers.Contains(data.EnrollNumber))
+                                {
+                                    uniqueUsers.Add(data.EnrollNumber);
+                                    userList.Add(data);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logging.Write(Logging.ERROR, "GetMockupDistinctUsers", $"Skipped invalid line: {ex.Message}");
+                        }
+                    }
+                }
+
+                Logging.Write(Logging.WATCH, "GetMockupDistinctUsers",
+                    $"Successfully read {userList.Count} distinct users from {fileName}");
+            }
+            catch (Exception ex)
+            {
+                Logging.Write(Logging.ERROR, "GetMockupDistinctUsers", ex.Message);
             }
 
             return userList;
