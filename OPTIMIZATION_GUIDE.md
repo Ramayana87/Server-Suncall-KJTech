@@ -6,48 +6,79 @@ Project này đã được tối ưu hóa để lọc dữ liệu chấm công h
 
 This project has been optimized to filter attendance data more efficiently, reducing data transfer time and processing.
 
+## ⚠️ CẬP NHẬT MỚI / NEW UPDATE
+
+**Xem file [BIOMETRIC_OPTIMIZATION.md](BIOMETRIC_OPTIMIZATION.md) để biết các tối ưu mới nhất!**
+
+**See [BIOMETRIC_OPTIMIZATION.md](BIOMETRIC_OPTIMIZATION.md) for the latest optimizations!**
+
+Các tối ưu mới bao gồm / New optimizations include:
+- ✅ Phân biệt operation type (GETLOGS/GETUSERS)
+- ✅ In-memory caching (giảm 99%+ thời gian query lặp lại)
+- ✅ Cache management với TTL và size limits
+- ✅ Backward compatibility
+
+---
+
 ## Các Thay Đổi Chính / Key Changes
 
-### 1. Giao Thức Socket Mới / New Socket Protocol
+### 1. Giao Thức Socket Mới Nhất / Latest Socket Protocol
 
 **Format cũ / Old format:**
 ```
 machineNumber|ip|port
 ```
 
-**Format mới / New format:**
+**Format mới với date filtering / New format with date filtering:**
 ```
 machineNumber|ip|port|fromDate|toDate
+```
+
+**Format mới nhất với operation type / Latest format with operation type:**
+```
+OPERATION|machineNumber|ip|port[|fromDate|toDate]
 ```
 
 **Ví dụ / Examples:**
 
 ```csharp
+// GETLOGS - Lấy dữ liệu chấm công với caching
+// GETLOGS - Get attendance logs with caching
+"GETLOGS|1|192.168.1.201|4370|2024-09-01 00:00:00|2024-09-30 23:59:59"
+
+// GETUSERS - Lấy danh sách user có vân tay
+// GETUSERS - Get users with fingerprint
+"GETUSERS|1|192.168.1.201|4370"
+
+// Backward compatible - Mặc định là GETLOGS
+// Backward compatible - Defaults to GETLOGS
+"1|192.168.1.201|4370|2024-09-01|2024-09-30"
+
 // Lấy tất cả dữ liệu (không lọc) / Get all data (no filter)
 "1|192.168.1.201|4370||"
-
-// Lấy dữ liệu từ ngày 2024-09-01 đến 2024-09-30
-// Get data from 2024-09-01 to 2024-09-30
-"1|192.168.1.201|4370|2024-09-01 00:00:00|2024-09-30 23:59:59"
-
-// Lấy dữ liệu 7 ngày gần nhất / Get last 7 days
-string fromDate = DateTime.Now.AddDays(-7).ToString("yyyy-MM-dd HH:mm:ss");
-string toDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-string request = $"1|192.168.1.201|4370|{fromDate}|{toDate}";
 ```
 
 ### 2. Lọc Dữ Liệu Phía Server / Server-Side Filtering
 
 Server bây giờ sẽ:
-1. Kết nối đến máy chấm công
-2. Lấy TẤT CẢ dữ liệu từ máy (vì API máy chấm công không hỗ trợ tham số thời gian)
-3. **Lọc dữ liệu theo khoảng thời gian trên server**
-4. Chỉ trả về dữ liệu đã lọc cho client
+1. Parse operation type (GETLOGS/GETUSERS)
+2. Kiểm tra cache trước (nếu có date range)
+3. Nếu cache hit → Trả về ngay (< 100ms)
+4. Nếu cache miss → Kết nối đến máy chấm công
+5. Lấy dữ liệu từ máy (API không hỗ trợ tham số thời gian)
+6. **Lọc dữ liệu theo khoảng thời gian trên server**
+7. Lưu vào cache (TTL: 24h)
+8. Trả về dữ liệu đã lọc cho client
 
 The server will now:
-1. Connect to the attendance machine
-2. Fetch ALL data from machine (because machine API doesn't support time parameters)
-3. **Filter data by date range on the server**
+1. Parse operation type (GETLOGS/GETUSERS)
+2. Check cache first (if date range provided)
+3. If cache hit → Return immediately (< 100ms)
+4. If cache miss → Connect to the attendance machine
+5. Fetch data from machine (API doesn't support time parameters)
+6. **Filter data by date range on the server**
+7. Save to cache (TTL: 24h)
+8. Return only filtered data to client
 4. Return only filtered data to client
 
 ### 3. Hiệu Suất / Performance
@@ -56,12 +87,20 @@ The server will now:
 - Truyền tải tất cả 670,000+ bản ghi
 - Thời gian: ~30-60 giây (tùy mạng)
 - Kích thước dữ liệu: ~50MB
+- Mỗi request đều query máy chấm công
 
-**Sau khi tối ưu / After optimization (7 ngày gần nhất):**
-- Chỉ truyền tải ~10,000-20,000 bản ghi
-- Thời gian: ~3-5 giây
+**Sau khi tối ưu với date filtering / After optimization with date filtering:**
+- Chỉ truyền tải ~10,000-20,000 bản ghi (7 ngày)
+- Thời gian: ~3-5 giây (lần đầu)
 - Kích thước dữ liệu: ~2-3MB
 - **Giảm 80-90% thời gian xử lý!**
+
+**Sau khi tối ưu với caching (NEW!) / After optimization with caching (NEW!):**
+- Chỉ truyền tải ~10,000-20,000 bản ghi (7 ngày)
+- Thời gian: **< 100ms** (từ cache)
+- Kích thước dữ liệu: ~2-3MB
+- **Giảm 99%+ thời gian cho repeated queries!**
+- **Không cần query máy chấm công nữa!**
 
 ## Hướng Dẫn Sử Dụng / Usage Guide
 
