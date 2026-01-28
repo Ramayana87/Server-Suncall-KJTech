@@ -40,14 +40,17 @@ namespace Server
                 txtPort.Text = "9999";
                 UpdateStatus("Ready", Color.Gray);
                 
-                // Add menu to launch test client
-                var menuStrip = new MenuStrip();
-                var toolsMenu = new ToolStripMenuItem("Tools");
-                var testClientMenuItem = new ToolStripMenuItem("Launch Test Client", null, LaunchTestClient);
-                toolsMenu.DropDownItems.Add(testClientMenuItem);
-                menuStrip.Items.Add(toolsMenu);
-                this.MainMenuStrip = menuStrip;
-                this.Controls.Add(menuStrip);
+                // Add menu to launch test client (only if not already added)
+                if (this.MainMenuStrip == null)
+                {
+                    var menuStrip = new MenuStrip();
+                    var toolsMenu = new ToolStripMenuItem("Tools");
+                    var testClientMenuItem = new ToolStripMenuItem("Launch Test Client", null, LaunchTestClient);
+                    toolsMenu.DropDownItems.Add(testClientMenuItem);
+                    menuStrip.Items.Add(toolsMenu);
+                    this.MainMenuStrip = menuStrip;
+                    this.Controls.Add(menuStrip);
+                }
             }
             catch (Exception ex)
             {
@@ -67,6 +70,7 @@ namespace Server
             {
                 MessageBox.Show($"Error launching test client: {ex.Message}", "Error", 
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Logging.Write(Logging.ERROR, "LaunchTestClient", ex.Message);
             }
         }
 
@@ -288,6 +292,7 @@ namespace Server
                     int recordNumber = 1;
                     int totalRecords = 0;
                     int filteredRecords = 0;
+                    int invalidRecords = 0;
                     
                     while (true)
                     {
@@ -306,10 +311,12 @@ namespace Server
                         if (data.EnrollNumber <= 0 || data.vGranted != 1 || 
                             data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
                         {
+                            invalidRecords++;
                             continue;
                         }
 
                         // Apply date range filter if specified
+                        bool passesDateFilter = true;
                         if (fromDate.HasValue || toDate.HasValue)
                         {
                             try
@@ -319,19 +326,24 @@ namespace Server
                                 
                                 if (fromDate.HasValue && recordDate < fromDate.Value)
                                 {
-                                    filteredRecords++;
-                                    continue;
+                                    passesDateFilter = false;
+                                }
+                                else if (toDate.HasValue && recordDate > toDate.Value)
+                                {
+                                    passesDateFilter = false;
                                 }
                                 
-                                if (toDate.HasValue && recordDate > toDate.Value)
+                                if (!passesDateFilter)
                                 {
                                     filteredRecords++;
                                     continue;
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
                                 // Skip records with invalid dates
+                                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
+                                invalidRecords++;
                                 continue;
                             }
                         }
@@ -341,8 +353,8 @@ namespace Server
                     }
 
                     string filterInfo = (fromDate.HasValue || toDate.HasValue) 
-                        ? $" (filtered {filteredRecords} from {totalRecords} total)"
-                        : "";
+                        ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
+                        : $" (invalid {invalidRecords} from {totalRecords} total)";
                     Logging.Write(Logging.WATCH, "GetAttendanceData", 
                         $"Successfully read {logDataList.Count} records{filterInfo}");
                 }

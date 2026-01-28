@@ -26,10 +26,24 @@ namespace Server
             txtServerIP.Text = "127.0.0.1";
             txtServerPort.Text = "9999";
             
-            // Find mockup data folder
+            // Find mockup data folder - try multiple locations
             string currentDir = AppDomain.CurrentDomain.BaseDirectory;
+            
+            // Try relative path from bin folder
             string projectRoot = Directory.GetParent(currentDir).Parent.Parent.FullName;
             mockupDataFolder = Path.Combine(projectRoot, "data mockup");
+            
+            // If not found, try current directory
+            if (!Directory.Exists(mockupDataFolder))
+            {
+                mockupDataFolder = Path.Combine(currentDir, "data mockup");
+            }
+            
+            // If still not found, try parent directory
+            if (!Directory.Exists(mockupDataFolder))
+            {
+                mockupDataFolder = Path.Combine(Directory.GetParent(currentDir).FullName, "data mockup");
+            }
             
             if (Directory.Exists(mockupDataFolder))
             {
@@ -70,6 +84,7 @@ namespace Server
                 var files = Directory.GetFiles(mockupDataFolder, "*.txt");
                 int totalLines = 0;
                 int validRecords = 0;
+                int skippedRecords = 0;
 
                 foreach (var file in files)
                 {
@@ -103,7 +118,7 @@ namespace Server
                                     data.vDay = recordTime.Day;
                                     data.vHour = recordTime.Hour;
                                     data.vMinute = recordTime.Minute;
-                                    data.vSecond = recordTime.Second;
+                                    data.vSecond = recordTime.Second & 0xFF;
                                 }
                                 
                                 if (data.vGranted == 1 && data.vEnrollNumber > 0)
@@ -112,9 +127,10 @@ namespace Server
                                     validRecords++;
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
-                                // Skip invalid lines
+                                skippedRecords++;
+                                Logging.Write(Logging.ERROR, "LoadMockup", $"Skipped invalid line: {ex.Message}");
                             }
                         }
                     }
@@ -128,6 +144,7 @@ namespace Server
                 txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Loaded mockup data:{Environment.NewLine}");
                 txtLog.AppendText($"  - Total lines: {totalLines:N0}{Environment.NewLine}");
                 txtLog.AppendText($"  - Valid records: {validRecords:N0}{Environment.NewLine}");
+                txtLog.AppendText($"  - Skipped records: {skippedRecords:N0}{Environment.NewLine}");
                 txtLog.AppendText($"  - Time taken: {stopwatch.ElapsedMilliseconds}ms{Environment.NewLine}{Environment.NewLine}");
             }
             catch (Exception ex)
@@ -160,6 +177,8 @@ namespace Server
                 // Filter mockup data based on date range
                 DateTime fromDate = dtpFrom.Value.Date;
                 DateTime toDate = dtpTo.Value.Date.AddDays(1).AddSeconds(-1);
+                
+                int invalidDates = 0;
 
                 var filteredData = mockupData.Where(d =>
                 {
@@ -171,6 +190,7 @@ namespace Server
                     }
                     catch
                     {
+                        invalidDates++;
                         return false;
                     }
                 }).ToList();
@@ -181,6 +201,7 @@ namespace Server
                 txtLog.AppendText($"  - Date range: {fromDate:yyyy-MM-dd} to {toDate:yyyy-MM-dd}{Environment.NewLine}");
                 txtLog.AppendText($"  - Total records: {mockupData.Count:N0}{Environment.NewLine}");
                 txtLog.AppendText($"  - Filtered records: {filteredData.Count:N0}{Environment.NewLine}");
+                txtLog.AppendText($"  - Invalid dates: {invalidDates:N0}{Environment.NewLine}");
                 txtLog.AppendText($"  - Filter time: {stopwatch.ElapsedMilliseconds}ms{Environment.NewLine}{Environment.NewLine}");
 
                 lblStatus.Text = $"Filtered: {filteredData.Count:N0} of {mockupData.Count:N0} records";
@@ -202,7 +223,22 @@ namespace Server
             try
             {
                 string serverIP = txtServerIP.Text.Trim();
-                int serverPort = int.Parse(txtServerPort.Text.Trim());
+                string serverPortStr = txtServerPort.Text.Trim();
+                
+                // Validate inputs
+                if (string.IsNullOrEmpty(serverIP))
+                {
+                    MessageBox.Show("Please enter server IP address", "Validation Error", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                if (!int.TryParse(serverPortStr, out int serverPort) || serverPort < 1 || serverPort > 65535)
+                {
+                    MessageBox.Show("Please enter a valid port number (1-65535)", "Validation Error", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
                 
                 Cursor = Cursors.WaitCursor;
                 lblStatus.Text = "Connecting to server...";
@@ -228,15 +264,16 @@ namespace Server
                         txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Sending request: {request}{Environment.NewLine}");
                         writer.WriteLine(request);
 
-                        // Read response
-                        string response = "";
+                        // Read response using StringBuilder for efficiency
+                        var responseBuilder = new System.Text.StringBuilder();
                         string line;
                         while ((line = reader.ReadLine()) != null)
                         {
                             if (line == "EXIT") break;
-                            response += line;
+                            responseBuilder.Append(line);
                         }
-
+                        
+                        string response = responseBuilder.ToString();
                         stopwatch.Stop();
 
                         if (response.StartsWith("ERROR"))
