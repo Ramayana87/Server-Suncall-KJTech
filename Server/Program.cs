@@ -13,16 +13,8 @@ namespace Server
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            
-            // Check command line arguments to determine which form to launch
-            if (args.Length > 0 && args[0].ToLower() == "test")
-            {
-                Application.Run(new TestClientForm());
-            }
-            else
-            {
-                Application.Run(new Form1());
-            }
+
+            Application.Run(new Form1());
         }
     }
 }
