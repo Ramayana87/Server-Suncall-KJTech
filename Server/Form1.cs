@@ -688,6 +688,10 @@ namespace Server
 
                             data.vGranted = parts[2].Trim() == "Granted" ? 1 : 0;
 
+                            // Parse verification method (column 7) to vMethod value
+                            string verification = parts[7].Trim();
+                            data.vMethod = ParseVerificationMethod(verification);
+
                             // Parse date time
                             if (DateTime.TryParse(parts[8].Trim(), out DateTime recordTime))
                             {
@@ -823,6 +827,10 @@ namespace Server
 
                             data.vGranted = parts[2].Trim() == "Granted" ? 1 : 0;
 
+                            // Parse verification method (column 7) to vMethod value
+                            string verification = parts[7].Trim();
+                            data.vMethod = ParseVerificationMethod(verification);
+
                             // Parse date time
                             if (DateTime.TryParse(parts[8].Trim(), out DateTime recordTime))
                             {
@@ -873,6 +881,31 @@ namespace Server
                 return intValue;
 
             return int.TryParse(obj?.ToString(), out int result) ? result : 0;
+        }
+
+        /// <summary>
+        /// Converts a verification method string (e.g., "by FP") to its corresponding vMethod integer value.
+        /// </summary>
+        private static int ParseVerificationMethod(string verification)
+        {
+            if (string.IsNullOrEmpty(verification))
+                return 0;
+
+            // Extract the base method from the verification string (remove any flags like [LT], [AP], etc.)
+            string baseMethod = verification.Split('[')[0].Trim();
+
+            switch (baseMethod)
+            {
+                case "by CD2": return 0;
+                case "by ID": return Constants.GLOG_BY_ID; // 1
+                case "by CD": return Constants.GLOG_BY_CD; // 2
+                case "by ID&CD": return Constants.GLOG_BY_ID | Constants.GLOG_BY_CD; // 3
+                case "by FP": return Constants.GLOG_BY_FP; // 4
+                case "by ID&FP": return Constants.GLOG_BY_ID | Constants.GLOG_BY_FP; // 5
+                case "by CD&FP": return Constants.GLOG_BY_CD | Constants.GLOG_BY_FP; // 6
+                case "by ID&CD&FP": return Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP; // 7
+                default: return 0;
+            }
         }
 
         public string GetErrorString()
