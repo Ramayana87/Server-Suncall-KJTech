@@ -604,11 +604,25 @@ namespace Server
 
         private List<GLogData> GetDistinctUsers(int machineNumber, string ip, int port)
         {
-            // Use cached attendance data to extract distinct users - more efficient!
+            // Try to get distinct users from cache first (within 2 days) to reduce load
+            // If cache is not available or too old, fall back to fetching from device
             try
             {
-                // Get all attendance data from cache (or device if needed)
-                var allData = GetAttendanceData(machineNumber, ip, port, null, null);
+                // Get cache manager for this machine
+                var cacheManager = GetOrCreateCacheManager(machineNumber);
+
+                // Try to get cached data if available and stored within the last 2 days
+                var allData = cacheManager.GetCachedDataOnly(maxCacheAgeDays: 2);
+
+                // If cache is not available (empty, never synced, or too old), fall back to old method
+                if (allData.Count == 0)
+                {
+                    Logging.Write(Logging.WATCH, "GetDistinctUsers",
+                        "Cache not available or too old, falling back to fetching from device");
+                    
+                    // Use the old method: fetch from device (with caching)
+                    allData = GetAttendanceData(machineNumber, ip, port, null, null);
+                }
 
                 // Extract distinct users with fingerprint authentication
                 var distinctUsers = allData
@@ -628,7 +642,7 @@ namespace Server
                     .ToList();
 
                 Logging.Write(Logging.WATCH, "GetDistinctUsers",
-                    $"Successfully extracted {distinctUsers.Count} distinct users from cached data");
+                    $"Successfully extracted {distinctUsers.Count} distinct users");
 
                 return distinctUsers;
             }
