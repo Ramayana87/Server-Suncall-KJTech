@@ -17,7 +17,7 @@ namespace Server
         private const int MAX_CONNECTION = 10;
         private bool statusOpen = true;
         private TcpListener listener;
-        private readonly Dictionary<int, AttendanceDataCache> _cacheManagers = new Dictionary<int, AttendanceDataCache>();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, AttendanceDataCache> _cacheManagers = new System.Collections.Concurrent.ConcurrentDictionary<int, AttendanceDataCache>();
 
         public Form1()
         {
@@ -486,11 +486,7 @@ namespace Server
 
         private AttendanceDataCache GetOrCreateCacheManager(int machineNumber)
         {
-            if (!_cacheManagers.ContainsKey(machineNumber))
-            {
-                _cacheManagers[machineNumber] = new AttendanceDataCache(machineNumber);
-            }
-            return _cacheManagers[machineNumber];
+            return _cacheManagers.GetOrAdd(machineNumber, (key) => new AttendanceDataCache(key));
         }
 
         private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
@@ -618,6 +614,10 @@ namespace Server
                 var distinctUsers = allData
                     .Where(data =>
                     {
+                        // Only include granted users with valid enroll numbers
+                        if (data.EnrollNumber <= 0 || data.vGranted != 1)
+                            return false;
+
                         // Check if it's fingerprint authentication
                         int vmmode = data.vMethod & (Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP);
                         bool isFingerprintAuth = (vmmode & Constants.GLOG_BY_FP) == Constants.GLOG_BY_FP;
@@ -637,10 +637,6 @@ namespace Server
                 Logging.Write(Logging.ERROR, "GetDistinctUsers", ex.Message);
                 return new List<GLogData>();
             }
-        }
-            }
-
-            return userList;
         }
 
         private List<GLogData> GetMockupAttendanceData(int machineNumber, DateTime? fromDate = null, DateTime? toDate = null)

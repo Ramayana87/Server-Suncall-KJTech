@@ -140,6 +140,15 @@ namespace Server
                 }
             }
 
+            // If requested date range starts before cached data, fetch
+            if (fromDate.HasValue && _cacheState.EarliestRecordDate.HasValue)
+            {
+                if (fromDate.Value.Date < _cacheState.EarliestRecordDate.Value.Date)
+                {
+                    return true;
+                }
+            }
+
             // If no date filter specified and cache is recent, no need to fetch
             if (!fromDate.HasValue && !toDate.HasValue)
             {
@@ -272,7 +281,7 @@ namespace Server
         /// <summary>
         /// Save cache to file
         /// </summary>
-        public void SaveCache()
+        private void SaveCache()
         {
             try
             {
@@ -299,7 +308,7 @@ namespace Server
         /// <summary>
         /// Load cache from file
         /// </summary>
-        public void LoadCache()
+        private void LoadCache()
         {
             try
             {
@@ -341,7 +350,7 @@ namespace Server
         /// <summary>
         /// Verify cache integrity
         /// </summary>
-        public bool VerifyCacheIntegrity()
+        private bool VerifyCacheIntegrity()
         {
             // Check if record count matches
             if (_cachedData.Count != _cacheState.TotalRecordsInCache)
@@ -462,9 +471,16 @@ namespace Server
         {
             lock (_cacheLock)
             {
+                string earliestDate = _cacheState.EarliestRecordDate.HasValue 
+                    ? _cacheState.EarliestRecordDate.Value.ToString("yyyy-MM-dd") 
+                    : "N/A";
+                string latestDate = _cacheState.LatestRecordDate.HasValue 
+                    ? _cacheState.LatestRecordDate.Value.ToString("yyyy-MM-dd") 
+                    : "N/A";
+
                 return $"Machine {_machineNumber}: {_cacheState.TotalRecordsInCache} records, " +
                        $"Last sync: {_cacheState.LastSyncTime:yyyy-MM-dd HH:mm:ss}, " +
-                       $"Date range: {_cacheState.EarliestRecordDate:yyyy-MM-dd} to {_cacheState.LatestRecordDate:yyyy-MM-dd}";
+                       $"Date range: {earliestDate} to {latestDate}";
             }
         }
     }
