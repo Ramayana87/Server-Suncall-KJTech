@@ -253,6 +253,20 @@ namespace Server
                                         toDate = parsedTo;
                                 }
 
+                                // Log the date range being applied
+                                if (fromDate.HasValue && toDate.HasValue)
+                                {
+                                    AppendLog($"[MOCKUP_GETLOGS] Filtering data from {fromDate.Value:yyyy-MM-dd HH:mm:ss} to {toDate.Value:yyyy-MM-dd HH:mm:ss}");
+                                }
+                                else if (fromDate.HasValue)
+                                {
+                                    AppendLog($"[MOCKUP_GETLOGS] Filtering data from {fromDate.Value:yyyy-MM-dd HH:mm:ss}");
+                                }
+                                else if (toDate.HasValue)
+                                {
+                                    AppendLog($"[MOCKUP_GETLOGS] Filtering data until {toDate.Value:yyyy-MM-dd HH:mm:ss}");
+                                }
+
                                 AppendLog($"[MOCKUP_GETLOGS] Starting data retrieval for machine {machineNumber}...");
                                 List<GLogData> logData = GetMockupAttendanceData(machineNumber, fromDate, toDate);
                                 stopwatch.Stop();
@@ -299,6 +313,20 @@ namespace Server
                             {
                                 if (DateTime.TryParse(parameters[4 + paramOffset], out DateTime parsedTo))
                                     toDate = parsedTo;
+                            }
+
+                            // Log the date range being applied
+                            if (fromDate.HasValue && toDate.HasValue)
+                            {
+                                AppendLog($"[GETLOGS] Filtering data from {fromDate.Value:yyyy-MM-dd HH:mm:ss} to {toDate.Value:yyyy-MM-dd HH:mm:ss}");
+                            }
+                            else if (fromDate.HasValue)
+                            {
+                                AppendLog($"[GETLOGS] Filtering data from {fromDate.Value:yyyy-MM-dd HH:mm:ss}");
+                            }
+                            else if (toDate.HasValue)
+                            {
+                                AppendLog($"[GETLOGS] Filtering data until {toDate.Value:yyyy-MM-dd HH:mm:ss}");
                             }
 
                             List<GLogData> logData = GetAttendanceData(machineNumber, ip, port, fromDate, toDate);
