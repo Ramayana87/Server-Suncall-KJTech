@@ -200,6 +200,7 @@ namespace Server
                             writer.WriteLine("EXIT");
 
                             AppendLog($"[GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                            break; // Exit the loop after sending response
                         }
                         else if (operation == "MOCKUP_GETUSERS")
                         {
@@ -214,6 +215,7 @@ namespace Server
                                 writer.WriteLine("EXIT");
 
                                 AppendLog($"[MOCKUP_GETUSERS] Sent {users.Count} users in {stopwatch.ElapsedMilliseconds}ms");
+                                break; // Exit the loop after sending response
                             }
                             catch (Exception ex)
                             {
@@ -224,6 +226,7 @@ namespace Server
                                 // Send empty result to prevent client timeout
                                 writer.WriteLine("[]");
                                 writer.WriteLine("EXIT");
+                                break; // Exit the loop after sending response
                             }
                         }
                         else if (operation == "MOCKUP_GETLOGS")
@@ -262,6 +265,7 @@ namespace Server
                                 sendWatch.Stop();
 
                                 AppendLog($"[MOCKUP_GETLOGS] Sent {logData.Count} records in total {stopwatch.ElapsedMilliseconds + serializeWatch.ElapsedMilliseconds + sendWatch.ElapsedMilliseconds}ms (retrieve: {stopwatch.ElapsedMilliseconds}ms, serialize: {serializeWatch.ElapsedMilliseconds}ms, send: {sendWatch.ElapsedMilliseconds}ms)");
+                                break; // Exit the loop after sending response
                             }
                             catch (Exception ex)
                             {
@@ -272,6 +276,7 @@ namespace Server
                                 // Send empty result to prevent client timeout
                                 writer.WriteLine("[]");
                                 writer.WriteLine("EXIT");
+                                break; // Exit the loop after sending response
                             }
                         }
                         else // GETLOGS
@@ -301,6 +306,7 @@ namespace Server
                             writer.WriteLine("EXIT");
 
                             AppendLog($"Sent {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms");
+                            break; // Exit the loop after sending response
 
                         }
                     }
@@ -309,6 +315,7 @@ namespace Server
                         AppendLog("Invalid request format");
                         writer.WriteLine("ERROR: Invalid format");
                         writer.WriteLine("EXIT");
+                        break; // Exit the loop after sending error response
                     }
                 }
             }
