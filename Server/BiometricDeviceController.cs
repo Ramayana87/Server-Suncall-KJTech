@@ -17,6 +17,11 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
 {
     public class BiometricDeviceController : BaseApiController
     {
+        // Timeout constants for socket connections
+        private const int CONNECTION_TIMEOUT_SECONDS = 5;
+        private const int RECEIVE_TIMEOUT_MS = 300000; // 300 seconds (5 minutes) for large datasets
+        private const int SEND_TIMEOUT_MS = 30000; // 30 seconds
+
         [HttpPost]
         public DataTable GetLogDataTable([FromBody] DataTable dtSearch)
         {
@@ -136,7 +141,24 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
 
                 using (var client = new TcpClient())
                 {
-                    client.Connect(endpoint);
+                    // Set connection timeout using async pattern
+                    var connectResult = client.BeginConnect(endpoint.Address, endpoint.Port, null, null);
+                    var connectSuccess = connectResult.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(CONNECTION_TIMEOUT_SECONDS));
+                    connectResult.AsyncWaitHandle.Close(); // Dispose the wait handle to prevent handle exhaustion
+
+                    if (!connectSuccess)
+                    {
+                        // Must call EndConnect to complete the async operation, even on timeout
+                        try { client.EndConnect(connectResult); } catch { }
+                        throw new Exception($"Connection timeout after {CONNECTION_TIMEOUT_SECONDS} seconds - server may not be running");
+                    }
+
+                    client.EndConnect(connectResult);
+
+                    // Set read/write timeouts for data transfer
+                    client.ReceiveTimeout = RECEIVE_TIMEOUT_MS;
+                    client.SendTimeout = SEND_TIMEOUT_MS;
+
                     Log(Logging.WATCH, "Connected to socket server!", callerName);
 
                     using (var writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
