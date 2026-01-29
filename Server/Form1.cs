@@ -258,12 +258,12 @@ namespace Server
                                 stopwatch.Stop();
 
                                 AppendLog($"[MOCKUP_GETLOGS] Data retrieved: {logData.Count} records in {stopwatch.ElapsedMilliseconds}ms. Starting serialization...");
-                                var serializeWatch = System.Diagnostics.Stopwatch.StartNew();
+                                var serializeWatch = Stopwatch.StartNew();
                                 string jsonData = JsonConvert.SerializeObject(logData);
                                 serializeWatch.Stop();
                                 AppendLog($"[MOCKUP_GETLOGS] Serialization completed in {serializeWatch.ElapsedMilliseconds}ms. Data size: {jsonData.Length / 1024}KB. Sending...");
 
-                                var sendWatch = System.Diagnostics.Stopwatch.StartNew();
+                                var sendWatch = Stopwatch.StartNew();
                                 writer.WriteLine(jsonData);
                                 writer.WriteLine("EXIT");
                                 sendWatch.Stop();
@@ -493,7 +493,7 @@ namespace Server
         {
             // Use cache manager for this machine
             var cacheManager = GetOrCreateCacheManager(machineNumber);
-            
+
             // Pass the device reading logic to the cache manager
             return cacheManager.GetAttendanceDataWithCache(
                 (from, to) => GetAttendanceDataFromDevice(machineNumber, ip, port, from, to),

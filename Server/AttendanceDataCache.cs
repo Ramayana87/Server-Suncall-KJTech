@@ -125,11 +125,11 @@ namespace Server
                 return true;
             }
 
-            // If cache is older than 24 hours, fetch
-            if ((DateTime.Now - _cacheState.LastSyncTime).TotalHours > 24)
-            {
-                return true;
-            }
+            // If cache is older than 24 hours, fetch -> bỏ, ko xoá cache cũ
+            //if ((DateTime.Now - _cacheState.LastSyncTime).TotalHours > 24)
+            //{
+            //    return true;
+            //}
 
             // If requested date range goes beyond cached data, fetch
             if (toDate.HasValue && _cacheState.LatestRecordDate.HasValue)
