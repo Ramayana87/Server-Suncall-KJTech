@@ -36,7 +36,8 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                 DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_TBD1");
                 dt.Columns.Add("EnrollName", typeof(string));
 
-                string request = $"{machineNumber}|{ip}|{port}|{fromDate}|{toDate}";
+                // Include GETLOGS operation type so server knows what data to retrieve
+                string request = $"GETLOGS|{machineNumber}|{ip}|{port}|{fromDate}|{toDate}";
 
                 var response = SendRequestToServer(request);
                 if (response == null)
@@ -82,7 +83,8 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
             {
                 DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_OTEM");
 
-                string request = $"{machineNumber}|{ip}|{port}";
+                // Include GETUSERS operation type so server knows what data to retrieve
+                string request = $"GETUSERS|{machineNumber}|{ip}|{port}";
 
                 var response = SendRequestToServer(request);
                 if (response == null)
