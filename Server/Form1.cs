@@ -125,12 +125,19 @@ namespace Server
                     listener = null;
                 }
 
-                // Only reset buttons if we're actually stopping
-                if (!statusOpen)
+                // Only reset buttons if we're actually stopping and form is not disposed
+                if (!statusOpen && !this.IsDisposed)
                 {
-                    UpdateStatus("Stopped", Color.Gray);
-                    btnStart.Enabled = true;
-                    btnStop.Enabled = false;
+                    try
+                    {
+                        UpdateStatus("Stopped", Color.Gray);
+                        if (!btnStart.IsDisposed) btnStart.Enabled = true;
+                        if (!btnStop.IsDisposed) btnStop.Enabled = false;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Control was disposed, ignore
+                    }
                 }
             }
         }
@@ -377,33 +384,73 @@ namespace Server
 
         private void UpdateStatus(string status, Color color)
         {
-            if (lblStatus.InvokeRequired)
+            // Check if control is disposed or disposing to avoid ObjectDisposedException
+            if (lblStatus == null || lblStatus.IsDisposed || this.IsDisposed)
             {
-                lblStatus.Invoke(new Action(() =>
-                {
-                    lblStatus.Text = status;
-                    lblStatus.ForeColor = color;
-                }));
+                return;
             }
-            else
+
+            try
             {
-                lblStatus.Text = status;
-                lblStatus.ForeColor = color;
+                if (lblStatus.InvokeRequired)
+                {
+                    lblStatus.Invoke(new Action(() =>
+                    {
+                        if (!lblStatus.IsDisposed && !this.IsDisposed)
+                        {
+                            lblStatus.Text = status;
+                            lblStatus.ForeColor = color;
+                        }
+                    }));
+                }
+                else
+                {
+                    if (!lblStatus.IsDisposed && !this.IsDisposed)
+                    {
+                        lblStatus.Text = status;
+                        lblStatus.ForeColor = color;
+                    }
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Control was disposed during invocation, ignore
             }
         }
 
         private void AppendLog(string message)
         {
-            if (txtLogs.InvokeRequired)
+            // Check if control is disposed or disposing to avoid ObjectDisposedException
+            if (txtLogs == null || txtLogs.IsDisposed || this.IsDisposed)
             {
-                txtLogs.Invoke(new Action(() =>
-                {
-                    txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
-                }));
+                return;
             }
-            else
+
+            try
             {
-                txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                if (txtLogs.InvokeRequired)
+                {
+                    txtLogs.Invoke(new Action(() =>
+                    {
+                        if (!txtLogs.IsDisposed && !this.IsDisposed)
+                        {
+                            txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                        }
+                    }));
+                }
+                else
+                {
+                    if (!txtLogs.IsDisposed && !this.IsDisposed)
+                    {
+                        txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                    }
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Control was disposed during invocation, ignore
+            }
+        }
             }
         }
 
