@@ -466,8 +466,8 @@ namespace Server
         }
 
         /// <summary>
-        /// Get cached data only if available and stored within the last 2 days.
-        /// Returns empty list if cache is not available or older than 2 days.
+        /// Get cached data only if available and stored within the specified age limit (default: 2 days).
+        /// Returns empty list if cache is not available or older than the specified limit.
         /// This is used for operations that should not trigger device polling.
         /// </summary>
         public List<GLogData> GetCachedDataOnly(int maxCacheAgeDays = 2)
@@ -479,6 +479,14 @@ namespace Server
                 {
                     Logging.Write(Logging.WATCH, "AttendanceDataCache",
                         $"Cache is empty for machine {_machineNumber}. Skipping device fetch.");
+                    return new List<GLogData>();
+                }
+
+                // Check if cache has never been synced
+                if (_cacheState.LastSyncTime == DateTime.MinValue)
+                {
+                    Logging.Write(Logging.WATCH, "AttendanceDataCache",
+                        $"Cache for machine {_machineNumber} has never been synced. Skipping device fetch.");
                     return new List<GLogData>();
                 }
 
