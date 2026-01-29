@@ -20,81 +20,102 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
         [HttpPost]
         public DataTable GetLogDataTable([FromBody] DataTable dtSearch)
         {
-            if (dtSearch == null || dtSearch.Rows.Count == 0)
+            try
             {
-                return new DataTable();
-            }
-
-            string machineNumber = Function.ToString(dtSearch.Rows[0]["machineNumber"]);
-            string ip = Function.ToString(dtSearch.Rows[0]["ip"]);
-            int port = Function.ParseInt(dtSearch.Rows[0]["port"]);
-            DateTime fromDate = Function.ParseDateTimes(dtSearch.Rows[0]["fromDate"]);
-            DateTime toDate = Function.ParseDateTimes(dtSearch.Rows[0]["toDate"]);
-
-            DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_TBD1");
-            dt.Columns.Add("EnrollName", typeof(string));
-
-            string request = $"{machineNumber}|{ip}|{port}|{fromDate}|{toDate}";
-
-            var response = SendRequestToServer(request);
-            if (response == null)
-            {
-                return new DataTable();
-            }
-
-            var logDataList = JsonConvert.DeserializeObject<List<GLogData>>(response);
-            foreach (var data in logDataList)
-            {
-                DateTime inputDate = Function.ParseDateTimes(data.Time);
-                if (fromDate.Date <= inputDate.Date && inputDate.Date <= toDate.Date && data.Result.Equals("Granted"))
+                if (dtSearch == null || dtSearch.Rows.Count == 0)
                 {
-                    var dr = dt.NewRow();
-                    dr["MachineNo"] = machineNumber;
-                    dr["EnrollNo"] = int.Parse(data.ID);
-                    dr["EnrollName"] = "";
-                    dr["DateTimeRecord"] = inputDate.ToString();
-                    dr["Source"] = data.vDoorMode;
-                    dr["ClockDate"] = inputDate.Date;
-                    dt.Rows.Add(dr);
+                    return new DataTable();
                 }
-            }
 
-            return dt;
+                string machineNumber = Function.ToString(dtSearch.Rows[0]["machineNumber"]);
+                string ip = Function.ToString(dtSearch.Rows[0]["ip"]);
+                int port = Function.ParseInt(dtSearch.Rows[0]["port"]);
+                DateTime fromDate = Function.ParseDateTimes(dtSearch.Rows[0]["fromDate"]);
+                DateTime toDate = Function.ParseDateTimes(dtSearch.Rows[0]["toDate"]);
+
+                DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_TBD1");
+                dt.Columns.Add("EnrollName", typeof(string));
+
+                string request = $"{machineNumber}|{ip}|{port}|{fromDate}|{toDate}";
+
+                var response = SendRequestToServer(request);
+                if (response == null)
+                {
+                    return dt;
+                }
+
+                var logDataList = JsonConvert.DeserializeObject<List<GLogData>>(response);
+                if (logDataList == null)
+                {
+                    return dt;
+                }
+
+                foreach (var data in logDataList)
+                {
+                    DateTime inputDate = Function.ParseDateTimes(data.Time);
+                    if (fromDate.Date <= inputDate.Date && inputDate.Date <= toDate.Date && data.Result.Equals("Granted"))
+                    {
+                        var dr = dt.NewRow();
+                        dr["MachineNo"] = machineNumber;
+                        dr["EnrollNo"] = int.Parse(data.ID);
+                        dr["EnrollName"] = "";
+                        dr["DateTimeRecord"] = inputDate.ToString();
+                        dr["Source"] = data.vDoorMode;
+                        dr["ClockDate"] = inputDate.Date;
+                        dt.Rows.Add(dr);
+                    }
+                }
+
+                return dt;
+            }
+            catch (Exception ex)
+            {
+                Log(Logging.ERROR, ex.Message);
+                return new DataTable();
+            }
         }
 
         [HttpGet]
         public DataTable GetAllUserTable(int machineNumber, string ip, int port)
         {
-            DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_OTEM");
-
-            string request = $"{machineNumber}|{ip}|{port}";
-
-            var response = SendRequestToServer(request);
-            if (response == null)
+            try
             {
+                DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_OTEM");
+
+                string request = $"{machineNumber}|{ip}|{port}";
+
+                var response = SendRequestToServer(request);
+                if (response == null)
+                {
+                    return dt;
+                }
+
+                var glogList = JsonConvert.DeserializeObject<List<GLogData>>(response);
+                if (glogList != null && glogList.Count > 0)
+                {
+                    var distinctUsers = glogList
+                        .Where(m => m.Result.Equals("Granted") && m.Method.Equals("by FP"))
+                        .GroupBy(m => m.ID)
+                        .Select(m => m.First())
+                        .ToList();
+
+                    foreach (var item in distinctUsers)
+                    {
+                        var r = dt.NewRow();
+                        r["MachineNo"] = machineNumber;
+                        r["EnrollNo"] = item.ID;
+                        r["EnrollName"] = "";
+                        dt.Rows.Add(r);
+                    }
+                }
+
+                return dt;
+            }
+            catch (Exception ex)
+            {
+                Log(Logging.ERROR, ex.Message);
                 return new DataTable();
             }
-
-            var glogList = JsonConvert.DeserializeObject<List<GLogData>>(response);
-            if (glogList.Count > 0)
-            {
-                var distinctUsers = glogList
-                    .Where(m => m.Result.Equals("Granted") && m.Method.Equals("by FP"))
-                    .GroupBy(m => m.ID)
-                    .Select(m => m.First())
-                    .ToList();
-
-                foreach (var item in distinctUsers)
-                {
-                    var r = dt.NewRow();
-                    r["MachineNo"] = machineNumber;
-                    r["EnrollNo"] = item.ID;
-                    r["EnrollName"] = "";
-                    dt.Rows.Add(r);
-                }
-            }
-
-            return dt;
         }
 
         /// <summary>
@@ -114,13 +135,6 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                 using (var client = new TcpClient())
                 {
                     client.Connect(endpoint);
-
-                    if (!client.Connected)
-                    {
-                        Log(Logging.WATCH, "Client did not connect!", callerName);
-                        return null;
-                    }
-
                     Log(Logging.WATCH, "Connected to socket server!", callerName);
 
                     using (var writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
@@ -129,29 +143,26 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                         // Send request
                         writer.WriteLine(request);
 
-                        // Receive response
-                        while (client.Connected)
+                        // Receive single response
+                        var response = reader.ReadLine();
+
+                        if (string.IsNullOrEmpty(response) || response.ToUpper() == "EXIT")
                         {
-                            var response = reader.ReadLine();
-
-                            if (string.IsNullOrEmpty(response) || response.ToUpper() == "EXIT")
-                            {
-                                writer.WriteLine("EXIT");
-                                break;
-                            }
-
-                            Log(Logging.WATCH, "Received data!", callerName);
+                            writer.WriteLine("EXIT");
                             Log(Logging.WATCH, "Client disconnect!", callerName);
-                            return response;
+                            return null;
                         }
+
+                        Log(Logging.WATCH, "Received data!", callerName);
+                        writer.WriteLine("EXIT");
+                        Log(Logging.WATCH, "Client disconnect!", callerName);
+                        return response;
                     }
                 }
-
-                return null;
             }
             catch (Exception ex)
             {
-                Log(Logging.ERROR, ex.Message, callerName);
+                Log(Logging.ERROR, ex.Message);
                 return null;
             }
         }
@@ -159,7 +170,7 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
         /// <summary>
         /// Helper method for consistent logging format.
         /// </summary>
-        private static void Log(string level, string message, string callerName)
+        private static void Log(string level, string message, [CallerMemberName] string callerName = "")
         {
             Logging.Write(level, callerName, message);
         }
