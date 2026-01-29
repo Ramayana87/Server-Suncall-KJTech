@@ -42,7 +42,8 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                 dt.Columns.Add("EnrollName", typeof(string));
 
                 // Include GETLOGS operation type so server knows what data to retrieve
-                string request = $"GETLOGS|{machineNumber}|{ip}|{port}|{fromDate}|{toDate}";
+                // Format dates consistently as "yyyy-MM-dd HH:mm:ss" to match server expectations
+                string request = $"GETLOGS|{machineNumber}|{ip}|{port}|{fromDate:yyyy-MM-dd HH:mm:ss}|{toDate:yyyy-MM-dd HH:mm:ss}";
 
                 var response = SendRequestToServer(request);
                 if (response == null)
@@ -58,9 +59,10 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
 
                 foreach (var data in logDataList)
                 {
-                    DateTime inputDate = Function.ParseDateTimes(data.Time);
-                    if (fromDate.Date <= inputDate.Date && inputDate.Date <= toDate.Date && data.Result.Equals("Granted"))
+                    // Server already filtered by date range, so we only need to check if result is "Granted"
+                    if (data.Result.Equals("Granted"))
                     {
+                        DateTime inputDate = Function.ParseDateTimes(data.Time);
                         var dr = dt.NewRow();
                         dr["MachineNo"] = machineNumber;
                         dr["EnrollNo"] = int.Parse(data.ID);
