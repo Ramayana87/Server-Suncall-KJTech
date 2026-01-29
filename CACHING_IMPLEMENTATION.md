@@ -58,6 +58,16 @@ Records are deduplicated using the key: `{vEnrollNumber}_{Time}`
 
 This ensures that duplicate records with the same employee ID and timestamp are not stored multiple times.
 
+## Data Validation
+
+Records are validated before being stored in cache:
+- **Year Range**: Only records from 2025 onwards are accepted (vYear >= 2025)
+- **Maximum Year**: Records cannot be from beyond next year (vYear <= CurrentYear + 1)
+- **Enrollment Number**: Must be greater than 0
+- **Access Status**: Must be granted (vGranted == 1)
+
+Invalid records are filtered out and logged during device fetch operations.
+
 ## File Structure
 
 ```

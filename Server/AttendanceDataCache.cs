@@ -360,8 +360,8 @@ namespace Server
                 return false;
             }
 
-            // Check for invalid records
-            int invalidCount = _cachedData.Count(d => d.vYear < 2000 || d.vYear > DateTime.Now.Year + 1);
+            // Check for invalid records (only records from 2025 onwards are valid)
+            int invalidCount = _cachedData.Count(d => d.vYear < 2025 || d.vYear > DateTime.Now.Year + 1);
             if (invalidCount > 0)
             {
                 Logging.Write(Logging.ERROR, "AttendanceDataCache",

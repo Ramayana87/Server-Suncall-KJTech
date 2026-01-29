@@ -540,9 +540,9 @@ namespace Server
 
                         totalRecords++;
 
-                        // Filter invalid records (validate year is reasonable)
+                        // Filter invalid records (validate year is reasonable, only records from 2025 onwards)
                         if (data.EnrollNumber <= 0 || data.vGranted != 1 ||
-                            data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                            data.vYear < 2025 || data.vYear > DateTime.Now.Year + 1)
                         {
                             invalidRecords++;
                             continue;
@@ -723,9 +723,9 @@ namespace Server
                                 data.vSecond = recordTime.Second & 0xFF;
                             }
 
-                            // Filter invalid records (validate year is reasonable)
+                            // Filter invalid records (validate year is reasonable, only records from 2025 onwards)
                             if (data.EnrollNumber <= 0 || data.vGranted != 1 ||
-                                data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                                data.vYear < 2025 || data.vYear > DateTime.Now.Year + 1)
                             {
                                 invalidRecords++;
                                 continue;
