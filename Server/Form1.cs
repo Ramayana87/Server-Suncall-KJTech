@@ -17,6 +17,7 @@ namespace Server
         private const int MAX_CONNECTION = 10;
         private bool statusOpen = true;
         private TcpListener listener;
+        private readonly Dictionary<int, AttendanceDataCache> _cacheManagers = new Dictionary<int, AttendanceDataCache>();
 
         public Form1()
         {
@@ -39,6 +40,9 @@ namespace Server
             {
                 txtPort.Text = "9999";
                 UpdateStatus("Ready", Color.Gray);
+
+                // Initialize cache directory
+                InitializeCacheDirectory();
 
                 // Add menu to launch test client (only if not already added)
                 if (this.MainMenuStrip == null)
@@ -459,7 +463,50 @@ namespace Server
             }
         }
 
+        private void InitializeCacheDirectory()
+        {
+            try
+            {
+                string cacheDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "cache");
+                if (!Directory.Exists(cacheDirectory))
+                {
+                    Directory.CreateDirectory(cacheDirectory);
+                    Logging.Write(Logging.WATCH, "InitializeCacheDirectory", $"Created cache directory: {cacheDirectory}");
+                }
+                else
+                {
+                    Logging.Write(Logging.WATCH, "InitializeCacheDirectory", $"Cache directory exists: {cacheDirectory}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logging.Write(Logging.ERROR, "InitializeCacheDirectory", ex.Message);
+            }
+        }
+
+        private AttendanceDataCache GetOrCreateCacheManager(int machineNumber)
+        {
+            if (!_cacheManagers.ContainsKey(machineNumber))
+            {
+                _cacheManagers[machineNumber] = new AttendanceDataCache(machineNumber);
+            }
+            return _cacheManagers[machineNumber];
+        }
+
         private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
+        {
+            // Use cache manager for this machine
+            var cacheManager = GetOrCreateCacheManager(machineNumber);
+            
+            // Pass the device reading logic to the cache manager
+            return cacheManager.GetAttendanceDataWithCache(
+                (from, to) => GetAttendanceDataFromDevice(machineNumber, ip, port, from, to),
+                fromDate,
+                toDate
+            );
+        }
+
+        private List<GLogData> GetAttendanceDataFromDevice(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
         {
             List<GLogData> logDataList = new List<GLogData>();
 
@@ -467,15 +514,15 @@ namespace Server
             {
                 if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
                 {
-                    Logging.Write(Logging.ERROR, "GetAttendanceData", "Failed to connect to device");
+                    Logging.Write(Logging.ERROR, "GetAttendanceDataFromDevice", "Failed to connect to device");
                     return logDataList;
                 }
 
                 bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
-                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Start reading: {GetErrorString()}");
+                Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice", $"Start reading: {GetErrorString()}");
 
                 success = SFC3KPC1.ReadGeneralLogData(machineNumber);
-                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Read result: {GetErrorString()}");
+                Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice", $"Read result: {GetErrorString()}");
 
                 if (success)
                 {
@@ -532,7 +579,7 @@ namespace Server
                             catch (Exception ex)
                             {
                                 // Skip records with invalid dates
-                                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
+                                Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice", $"Invalid date in record: {ex.Message}");
                                 invalidRecords++;
                                 continue;
                             }
@@ -545,7 +592,7 @@ namespace Server
                     string filterInfo = (fromDate.HasValue || toDate.HasValue)
                         ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
                         : $" (invalid {invalidRecords} from {totalRecords} total)";
-                    Logging.Write(Logging.WATCH, "GetAttendanceData",
+                    Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice",
                         $"Successfully read {logDataList.Count} records{filterInfo}");
                 }
 
@@ -553,7 +600,7 @@ namespace Server
             }
             catch (Exception ex)
             {
-                Logging.Write(Logging.ERROR, "GetAttendanceData", ex.Message);
+                Logging.Write(Logging.ERROR, "GetAttendanceDataFromDevice", ex.Message);
             }
 
             return logDataList;
