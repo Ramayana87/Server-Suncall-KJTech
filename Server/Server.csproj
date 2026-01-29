@@ -34,7 +34,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="AxInterop.SFC3KPCLib">
-      <HintPath>..\..\..\OCX_140508\Samples\SFC3KCSharpSample\CSharpSample\bin\Debug\AxInterop.SFC3KPCLib.dll</HintPath>
+      <HintPath>..\dll\AxInterop.SFC3KPCLib.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
