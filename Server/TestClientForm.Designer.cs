@@ -20,6 +20,7 @@ namespace Server
             this.groupBox1 = new System.Windows.Forms.GroupBox();
             this.btnLoadMockup = new System.Windows.Forms.Button();
             this.btnTestMockup = new System.Windows.Forms.Button();
+            this.btnTestServerMockup = new System.Windows.Forms.Button();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.label8 = new System.Windows.Forms.Label();
             this.txtMachinePort = new System.Windows.Forms.TextBox();
@@ -49,11 +50,12 @@ namespace Server
             // 
             // groupBox1
             // 
+            this.groupBox1.Controls.Add(this.btnTestServerMockup);
             this.groupBox1.Controls.Add(this.btnTestMockup);
             this.groupBox1.Controls.Add(this.btnLoadMockup);
             this.groupBox1.Location = new System.Drawing.Point(12, 12);
             this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(250, 90);
+            this.groupBox1.Size = new System.Drawing.Size(250, 120);
             this.groupBox1.TabIndex = 0;
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "Mockup Data Test";
@@ -77,6 +79,16 @@ namespace Server
             this.btnTestMockup.Text = "Test Filter on Mockup Data";
             this.btnTestMockup.UseVisualStyleBackColor = true;
             this.btnTestMockup.Click += new System.EventHandler(this.btnTestMockup_Click);
+            // 
+            // btnTestServerMockup
+            // 
+            this.btnTestServerMockup.Location = new System.Drawing.Point(15, 85);
+            this.btnTestServerMockup.Name = "btnTestServerMockup";
+            this.btnTestServerMockup.Size = new System.Drawing.Size(220, 25);
+            this.btnTestServerMockup.TabIndex = 2;
+            this.btnTestServerMockup.Text = "Test Server with Mockup Data";
+            this.btnTestServerMockup.UseVisualStyleBackColor = true;
+            this.btnTestServerMockup.Click += new System.EventHandler(this.btnTestServerMockup_Click);
             // 
             // groupBox2
             // 
@@ -212,7 +224,7 @@ namespace Server
             this.groupBox3.Controls.Add(this.dtpTo);
             this.groupBox3.Controls.Add(this.label4);
             this.groupBox3.Controls.Add(this.dtpFrom);
-            this.groupBox3.Location = new System.Drawing.Point(12, 108);
+            this.groupBox3.Location = new System.Drawing.Point(12, 138);
             this.groupBox3.Name = "groupBox3";
             this.groupBox3.Size = new System.Drawing.Size(250, 90);
             this.groupBox3.TabIndex = 2;
@@ -327,6 +339,7 @@ namespace Server
         private System.Windows.Forms.GroupBox groupBox1;
         private System.Windows.Forms.Button btnLoadMockup;
         private System.Windows.Forms.Button btnTestMockup;
+        private System.Windows.Forms.Button btnTestServerMockup;
         private System.Windows.Forms.GroupBox groupBox2;
         private System.Windows.Forms.Button btnTestServer;
         private System.Windows.Forms.Label label3;

@@ -223,7 +223,7 @@ namespace Server
                 lblStatus.Text = $"Filtered: {filteredData.Count:N0} of {mockupData.Count:N0} records";
                 lblStatus.ForeColor = Color.Green;
 
-                // ghi vào log
+                // ghi vï¿½o log
                 string jsonData = JsonConvert.SerializeObject(filteredData);
                 Logging.Write(Logging.WATCH, "Mockup filter test", jsonData);
             }
@@ -291,10 +291,27 @@ namespace Server
 
                 var stopwatch = Stopwatch.StartNew();
 
-                // Connect to server
+                // Connect to server with timeout
                 using (TcpClient client = new TcpClient())
                 {
-                    client.Connect(serverIP, serverPort);
+                    // Set connection timeout
+                    var result = client.BeginConnect(serverIP, serverPort, null, null);
+                    var success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+                    
+                    if (!success)
+                    {
+                        throw new Exception("Connection timeout - server may not be running");
+                    }
+                    
+                    client.EndConnect(result);
+                    
+                    // Set read/write timeouts
+                    // Increased read timeout to 300 seconds (5 minutes) to handle:
+                    // - Large datasets from biometric devices (can have 100K+ records)
+                    // - Heavy processing and date filtering
+                    // - JSON serialization and network transmission
+                    client.ReceiveTimeout = 300000; // 300 seconds (5 minutes)
+                    client.SendTimeout = 30000; // 30 seconds
                     
                     using (StreamReader reader = new StreamReader(client.GetStream()))
                     using (StreamWriter writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
@@ -360,6 +377,22 @@ namespace Server
                     }
                 }
             }
+            catch (TimeoutException tex)
+            {
+                lblStatus.Text = "Connection timeout";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Timeout: {tex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection timeout. Please ensure:\n1. Server is running\n2. Server IP and Port are correct\n3. Firewall is not blocking the connection", "Connection Timeout",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (System.Net.Sockets.SocketException sex)
+            {
+                lblStatus.Text = "Connection failed";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Connection failed: {sex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection failed. Please ensure:\n1. Server is running\n2. Server IP ({txtServerIP.Text}) and Port ({txtServerPort.Text}) are correct\n\nError: {sex.Message}", "Connection Failed",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             catch (Exception ex)
             {
                 lblStatus.Text = "Connection error";
@@ -377,6 +410,170 @@ namespace Server
         private void btnClearLog_Click(object sender, EventArgs e)
         {
             txtLog.Clear();
+        }
+
+        private void btnTestServerMockup_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string serverIP = txtServerIP.Text.Trim();
+                string serverPortStr = txtServerPort.Text.Trim();
+                string machineNumberStr = txtMachineNumber.Text.Trim();
+
+                // Validate inputs
+                if (string.IsNullOrEmpty(serverIP))
+                {
+                    MessageBox.Show("Please enter server IP address", "Validation Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (!int.TryParse(serverPortStr, out int serverPort) || serverPort < 1 || serverPort > 65535)
+                {
+                    MessageBox.Show("Please enter a valid server port number (1-65535)", "Validation Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (!int.TryParse(machineNumberStr, out int machineNumber))
+                {
+                    MessageBox.Show("Please enter a valid machine number", "Validation Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                Cursor = Cursors.WaitCursor;
+                lblStatus.Text = "Connecting to server with mockup data request...";
+                lblStatus.ForeColor = Color.Blue;
+                Application.DoEvents();
+
+                var stopwatch = Stopwatch.StartNew();
+
+                // Connect to server with timeout
+                using (TcpClient client = new TcpClient())
+                {
+                    // Set connection timeout
+                    var result = client.BeginConnect(serverIP, serverPort, null, null);
+                    var success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+                    
+                    if (!success)
+                    {
+                        throw new Exception("Connection timeout - server may not be running");
+                    }
+                    
+                    client.EndConnect(result);
+                    
+                    // Set read/write timeouts
+                    // Increased read timeout to 300 seconds (5 minutes) to handle:
+                    // - Large mockup datasets (e.g., may 5.txt with ~189K records)
+                    // - Heavy date filtering (can filter out 155K+ records)
+                    // - JSON serialization of thousands of records
+                    // - Network transmission of large payload
+                    client.ReceiveTimeout = 300000; // 300 seconds (5 minutes)
+                    client.SendTimeout = 30000; // 30 seconds
+
+                    using (StreamReader reader = new StreamReader(client.GetStream()))
+                    using (StreamWriter writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
+                    {
+                        // Build request: MOCKUP_GETLOGS|machineNumber|dummy_ip|dummy_port|fromDate|toDate
+                        string fromDateStr = chkUseDateFilter.Checked ? dtpFrom.Value.ToString("yyyy-MM-dd HH:mm:ss") : "";
+                        string toDateStr = chkUseDateFilter.Checked ? dtpTo.Value.AddDays(1).AddSeconds(-1).ToString("yyyy-MM-dd HH:mm:ss") : "";
+
+                        string request = $"MOCKUP_GETLOGS|{machineNumber}|0.0.0.0|0|{fromDateStr}|{toDateStr}";
+
+                        txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Sending mockup request: {request}{Environment.NewLine}");
+                        writer.WriteLine(request);
+
+                        // Read response using StringBuilder for efficiency
+                        var responseBuilder = new System.Text.StringBuilder();
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            if (line == "EXIT") break;
+                            responseBuilder.Append(line);
+                        }
+
+                        string response = responseBuilder.ToString();
+                        stopwatch.Stop();
+
+                        if (response.StartsWith("ERROR"))
+                        {
+                            txtLog.AppendText($"  - Server error: {response}{Environment.NewLine}{Environment.NewLine}");
+                            lblStatus.Text = "Server returned error";
+                            lblStatus.ForeColor = Color.Red;
+                        }
+                        else
+                        {
+                            var data = JsonConvert.DeserializeObject<List<GLogData>>(response);
+
+                            txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Server response (mockup data):{Environment.NewLine}");
+                            txtLog.AppendText($"  - Records received: {data.Count:N0}{Environment.NewLine}");
+                            txtLog.AppendText($"  - Total time: {stopwatch.ElapsedMilliseconds}ms{Environment.NewLine}");
+                            txtLog.AppendText($"  - Data size: {response.Length / 1024:N0} KB{Environment.NewLine}");
+                            
+                            if (data.Count == 0)
+                            {
+                                txtLog.AppendText($"  - WARNING: No records returned. Check machine number (available: 5, 6, 7, 8){Environment.NewLine}{Environment.NewLine}");
+                                lblStatus.Text = "No records received - check machine number";
+                                lblStatus.ForeColor = Color.Orange;
+                            }
+                            else
+                            {
+                                txtLog.AppendText($"{Environment.NewLine}");
+                                lblStatus.Text = $"Received {data.Count:N0} mockup records in {stopwatch.ElapsedMilliseconds}ms";
+                                lblStatus.ForeColor = Color.Green;
+                            }
+
+                            // Save response to log file
+                            try
+                            {
+                                string logFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Log");
+                                if (!Directory.Exists(logFolder))
+                                {
+                                    Directory.CreateDirectory(logFolder);
+                                }
+
+                                string logFileName = Path.Combine(logFolder, $"ServerMockupResponse_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+                                File.WriteAllText(logFileName, response);
+
+                                txtLog.AppendText($"  - Saved response to: {logFileName}{Environment.NewLine}{Environment.NewLine}");
+                            }
+                            catch (Exception logEx)
+                            {
+                                txtLog.AppendText($"  - Warning: Could not save log file: {logEx.Message}{Environment.NewLine}{Environment.NewLine}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (TimeoutException tex)
+            {
+                lblStatus.Text = "Connection timeout";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Timeout: {tex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection timeout. Please ensure:\n1. Server is running\n2. Server IP and Port are correct\n3. Firewall is not blocking the connection", "Connection Timeout",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (System.Net.Sockets.SocketException sex)
+            {
+                lblStatus.Text = "Connection failed";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Connection failed: {sex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Connection failed. Please ensure:\n1. Server is running\n2. Server IP ({txtServerIP.Text}) and Port ({txtServerPort.Text}) are correct\n\nError: {sex.Message}", "Connection Failed",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text = "Connection error";
+                lblStatus.ForeColor = Color.Red;
+                txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] Error: {ex.Message}{Environment.NewLine}{Environment.NewLine}");
+                MessageBox.Show($"Error connecting to server: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+            }
         }
     }
 }
