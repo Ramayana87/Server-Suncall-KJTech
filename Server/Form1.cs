@@ -17,6 +17,7 @@ namespace Server
         private const int MAX_CONNECTION = 10;
         private bool statusOpen = true;
         private TcpListener listener;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, AttendanceDataCache> _cacheManagers = new System.Collections.Concurrent.ConcurrentDictionary<int, AttendanceDataCache>();
 
         public Form1()
         {
@@ -39,6 +40,9 @@ namespace Server
             {
                 txtPort.Text = "9999";
                 UpdateStatus("Ready", Color.Gray);
+
+                // Initialize cache directory
+                InitializeCacheDirectory();
 
                 // Add menu to launch test client (only if not already added)
                 if (this.MainMenuStrip == null)
@@ -459,7 +463,46 @@ namespace Server
             }
         }
 
+        private void InitializeCacheDirectory()
+        {
+            try
+            {
+                string cacheDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "cache");
+                if (!Directory.Exists(cacheDirectory))
+                {
+                    Directory.CreateDirectory(cacheDirectory);
+                    Logging.Write(Logging.WATCH, "InitializeCacheDirectory", $"Created cache directory: {cacheDirectory}");
+                }
+                else
+                {
+                    Logging.Write(Logging.WATCH, "InitializeCacheDirectory", $"Cache directory exists: {cacheDirectory}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logging.Write(Logging.ERROR, "InitializeCacheDirectory", ex.Message);
+            }
+        }
+
+        private AttendanceDataCache GetOrCreateCacheManager(int machineNumber)
+        {
+            return _cacheManagers.GetOrAdd(machineNumber, (key) => new AttendanceDataCache(key));
+        }
+
         private List<GLogData> GetAttendanceData(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
+        {
+            // Use cache manager for this machine
+            var cacheManager = GetOrCreateCacheManager(machineNumber);
+            
+            // Pass the device reading logic to the cache manager
+            return cacheManager.GetAttendanceDataWithCache(
+                (from, to) => GetAttendanceDataFromDevice(machineNumber, ip, port, from, to),
+                fromDate,
+                toDate
+            );
+        }
+
+        private List<GLogData> GetAttendanceDataFromDevice(int machineNumber, string ip, int port, DateTime? fromDate = null, DateTime? toDate = null)
         {
             List<GLogData> logDataList = new List<GLogData>();
 
@@ -467,15 +510,15 @@ namespace Server
             {
                 if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
                 {
-                    Logging.Write(Logging.ERROR, "GetAttendanceData", "Failed to connect to device");
+                    Logging.Write(Logging.ERROR, "GetAttendanceDataFromDevice", "Failed to connect to device");
                     return logDataList;
                 }
 
                 bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
-                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Start reading: {GetErrorString()}");
+                Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice", $"Start reading: {GetErrorString()}");
 
                 success = SFC3KPC1.ReadGeneralLogData(machineNumber);
-                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Read result: {GetErrorString()}");
+                Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice", $"Read result: {GetErrorString()}");
 
                 if (success)
                 {
@@ -497,9 +540,9 @@ namespace Server
 
                         totalRecords++;
 
-                        // Filter invalid records (validate year is reasonable)
+                        // Filter invalid records (validate year is reasonable, only records from 2025 onwards)
                         if (data.EnrollNumber <= 0 || data.vGranted != 1 ||
-                            data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                            data.vYear < 2025 || data.vYear > DateTime.Now.Year + 1)
                         {
                             invalidRecords++;
                             continue;
@@ -532,7 +575,7 @@ namespace Server
                             catch (Exception ex)
                             {
                                 // Skip records with invalid dates
-                                Logging.Write(Logging.WATCH, "GetAttendanceData", $"Invalid date in record: {ex.Message}");
+                                Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice", $"Invalid date in record: {ex.Message}");
                                 invalidRecords++;
                                 continue;
                             }
@@ -545,7 +588,7 @@ namespace Server
                     string filterInfo = (fromDate.HasValue || toDate.HasValue)
                         ? $" (filtered {filteredRecords}, invalid {invalidRecords} from {totalRecords} total)"
                         : $" (invalid {invalidRecords} from {totalRecords} total)";
-                    Logging.Write(Logging.WATCH, "GetAttendanceData",
+                    Logging.Write(Logging.WATCH, "GetAttendanceDataFromDevice",
                         $"Successfully read {logDataList.Count} records{filterInfo}");
                 }
 
@@ -553,7 +596,7 @@ namespace Server
             }
             catch (Exception ex)
             {
-                Logging.Write(Logging.ERROR, "GetAttendanceData", ex.Message);
+                Logging.Write(Logging.ERROR, "GetAttendanceDataFromDevice", ex.Message);
             }
 
             return logDataList;
@@ -561,69 +604,39 @@ namespace Server
 
         private List<GLogData> GetDistinctUsers(int machineNumber, string ip, int port)
         {
-            List<GLogData> userList = new List<GLogData>();
-
+            // Use cached attendance data to extract distinct users - more efficient!
             try
             {
-                if (!SFC3KPC1.ConnectTcpip(machineNumber, ip, port, 0))
-                {
-                    Logging.Write(Logging.ERROR, "GetDistinctUsers", "Failed to connect to device");
-                    return userList;
-                }
+                // Get all attendance data from cache (or device if needed)
+                var allData = GetAttendanceData(machineNumber, ip, port, null, null);
 
-                try
-                {
-                    bool success = SFC3KPC1.StartReadGeneralLogData(machineNumber);
-                    Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Start reading: {GetErrorString()}");
-
-                    success = SFC3KPC1.ReadGeneralLogData(machineNumber);
-                    Logging.Write(Logging.WATCH, "GetDistinctUsers", $"Read result: {GetErrorString()}");
-
-                    if (success)
+                // Extract distinct users with fingerprint authentication
+                var distinctUsers = allData
+                    .Where(data =>
                     {
-                        HashSet<int> uniqueUsers = new HashSet<int>();
+                        // Only include granted users with valid enroll numbers
+                        if (data.EnrollNumber <= 0 || data.vGranted != 1)
+                            return false;
 
-                        while (true)
-                        {
-                            GLogData data = new GLogData();
-                            success = SFC3KPC1.GetGeneralLogData(machineNumber,
-                                ref data.vEnrollNumber, ref data.vGranted, ref data.vMethod,
-                                ref data.vDoorMode, ref data.vFunNumber, ref data.vSensor,
-                                ref data.vYear, ref data.vMonth, ref data.vDay,
-                                ref data.vHour, ref data.vMinute, ref data.vSecond);
+                        // Check if it's fingerprint authentication
+                        int vmmode = data.vMethod & (Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP);
+                        bool isFingerprintAuth = (vmmode & Constants.GLOG_BY_FP) == Constants.GLOG_BY_FP;
+                        return isFingerprintAuth;
+                    })
+                    .GroupBy(data => data.EnrollNumber)
+                    .Select(group => group.First())
+                    .ToList();
 
-                            if (!success) break;
+                Logging.Write(Logging.WATCH, "GetDistinctUsers",
+                    $"Successfully extracted {distinctUsers.Count} distinct users from cached data");
 
-                            // Only include granted users with fingerprint method
-                            if (data.EnrollNumber > 0 && data.vGranted == 1)
-                            {
-                                // Check if it's fingerprint authentication
-                                int vmmode = data.vMethod & (Constants.GLOG_BY_ID | Constants.GLOG_BY_CD | Constants.GLOG_BY_FP);
-                                bool isFingerprintAuth = (vmmode & Constants.GLOG_BY_FP) == Constants.GLOG_BY_FP;
-
-                                if (isFingerprintAuth && !uniqueUsers.Contains(data.EnrollNumber))
-                                {
-                                    uniqueUsers.Add(data.EnrollNumber);
-                                    userList.Add(data);
-                                }
-                            }
-                        }
-
-                        Logging.Write(Logging.WATCH, "GetDistinctUsers",
-                            $"Successfully read {userList.Count} distinct users");
-                    }
-                }
-                finally
-                {
-                    SFC3KPC1.Disconnect(machineNumber);
-                }
+                return distinctUsers;
             }
             catch (Exception ex)
             {
                 Logging.Write(Logging.ERROR, "GetDistinctUsers", ex.Message);
+                return new List<GLogData>();
             }
-
-            return userList;
         }
 
         private List<GLogData> GetMockupAttendanceData(int machineNumber, DateTime? fromDate = null, DateTime? toDate = null)
@@ -710,9 +723,9 @@ namespace Server
                                 data.vSecond = recordTime.Second & 0xFF;
                             }
 
-                            // Filter invalid records (validate year is reasonable)
+                            // Filter invalid records (validate year is reasonable, only records from 2025 onwards)
                             if (data.EnrollNumber <= 0 || data.vGranted != 1 ||
-                                data.vYear < 2000 || data.vYear > DateTime.Now.Year + 1)
+                                data.vYear < 2025 || data.vYear > DateTime.Now.Year + 1)
                             {
                                 invalidRecords++;
                                 continue;

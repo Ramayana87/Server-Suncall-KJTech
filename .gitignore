@@ -36,3 +36,7 @@ bld/
 [Ll]og/**/*.txt
 [Ll]og/**/*.log
 /Server/.vs
+
+# Cache directory
+[Dd]ata/[Cc]ache/
+/Server/data/cache/
