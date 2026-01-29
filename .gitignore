@@ -29,10 +29,10 @@ bld/
 
 # Build Results
 *.exe
-*.dll
 *.pdb
 *.cache
 
 # Log files (only in Log directory)
 [Ll]og/**/*.txt
 [Ll]og/**/*.log
+/Server/.vs
