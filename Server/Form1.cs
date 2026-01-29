@@ -604,11 +604,15 @@ namespace Server
 
         private List<GLogData> GetDistinctUsers(int machineNumber, string ip, int port)
         {
-            // Use cached attendance data to extract distinct users - more efficient!
+            // Get distinct users from cache only (within 2 days) to reduce load
             try
             {
-                // Get all attendance data from cache (or device if needed)
-                var allData = GetAttendanceData(machineNumber, ip, port, null, null);
+                // Get cache manager for this machine
+                var cacheManager = GetOrCreateCacheManager(machineNumber);
+
+                // Get cached data only if available and stored within the last 2 days
+                // This prevents unnecessary device polling for GetDistinctUsers operation
+                var allData = cacheManager.GetCachedDataOnly(maxCacheAgeDays: 2);
 
                 // Extract distinct users with fingerprint authentication
                 var distinctUsers = allData
