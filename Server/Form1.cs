@@ -320,6 +320,11 @@ namespace Server
 
         private void btnStop_Click(object sender, EventArgs e)
         {
+            StopServer();
+        }
+
+        private void StopServer()
+        {
             try
             {
                 statusOpen = false;
@@ -339,8 +344,35 @@ namespace Server
             {
                 UpdateStatus("Error", Color.Red);
                 AppendLog($"Stop error: {ex.Message}");
-                Logging.Write(Logging.ERROR, "btnStop_Click", ex.Message);
+                Logging.Write(Logging.ERROR, "StopServer", ex.Message);
             }
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            // Check if server is running
+            if (statusOpen && listener != null)
+            {
+                var result = MessageBox.Show(
+                    "Server is currently running. Do you want to stop the server and close the application?",
+                    "Confirm Close",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.No)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                // Stop server before closing
+                StopServer();
+            }
+        }
+
+        private void btnClearLog_Click(object sender, EventArgs e)
+        {
+            txtLogs.Clear();
         }
 
         private void UpdateStatus(string status, Color color)

@@ -3,7 +3,6 @@ using Apzon.Commons;
 using SAPbobsCOM;
 using System;
 using System.Data;
-using System.Diagnostics;
 using System.Net.Sockets;
 using System.Net;
 using System.Web.Http;
@@ -12,162 +11,157 @@ using Newtonsoft.Json;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
 {
     public class BiometricDeviceController : BaseApiController
     {
-
         [HttpPost]
         public DataTable GetLogDataTable([FromBody] DataTable dtSearch)
         {
-            try
+            if (dtSearch == null || dtSearch.Rows.Count == 0)
             {
-                if (null == dtSearch || dtSearch.Rows.Count == 0)
+                return new DataTable();
+            }
+
+            string machineNumber = Function.ToString(dtSearch.Rows[0]["machineNumber"]);
+            string ip = Function.ToString(dtSearch.Rows[0]["ip"]);
+            int port = Function.ParseInt(dtSearch.Rows[0]["port"]);
+            DateTime fromDate = Function.ParseDateTimes(dtSearch.Rows[0]["fromDate"]);
+            DateTime toDate = Function.ParseDateTimes(dtSearch.Rows[0]["toDate"]);
+
+            DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_TBD1");
+            dt.Columns.Add("EnrollName", typeof(string));
+
+            string request = $"{machineNumber}|{ip}|{port}|{fromDate}|{toDate}";
+
+            var response = SendRequestToServer(request);
+            if (response == null)
+            {
+                return new DataTable();
+            }
+
+            var logDataList = JsonConvert.DeserializeObject<List<GLogData>>(response);
+            foreach (var data in logDataList)
+            {
+                DateTime inputDate = Function.ParseDateTimes(data.Time);
+                if (fromDate.Date <= inputDate.Date && inputDate.Date <= toDate.Date && data.Result.Equals("Granted"))
                 {
-                    return new DataTable();
-                }
-                string machineNumber = Function.ToString(dtSearch.Rows[0]["machineNumber"]);
-                string ip = Function.ToString(dtSearch.Rows[0]["ip"]);
-                int port = Function.ParseInt(dtSearch.Rows[0]["port"]);
-                DateTime fromDate = Function.ParseDateTimes(dtSearch.Rows[0]["fromDate"]);
-                DateTime toDate = Function.ParseDateTimes(dtSearch.Rows[0]["toDate"]);
-                DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_TBD1");
-                dt.Columns.Add("EnrollName", typeof(string));
-                Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Start connect to socket server...");
-                var client = new TcpClient();
-                IPEndPoint IpEnd = new IPEndPoint(IPAddress.Parse(Global.BiometricServer), Global.BiometricPort);
-                client.Connect(IpEnd);
-                if (client.Connected)
-                {
-
-                    var STW = new StreamWriter(client.GetStream());
-                    var STR = new StreamReader(client.GetStream());
-                    STW.AutoFlush = true;
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Connected to socket server!");
-
-                    // 2. send
-                    STW.WriteLine(string.Format("{0}|{1}|{2}|{3}|{4}", machineNumber, ip, port, fromDate, toDate));
-
-                    // 3. receive
-                    while (client.Connected)
-                    {
-                        var recieve = STR.ReadLine();
-
-                        if (recieve.ToUpper() == "EXIT")
-                        {
-                            STW.WriteLine("EXIT");
-                            break;
-                        }
-                        else
-                        {
-                            Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "recieved data!");
-                            var ListData = JsonConvert.DeserializeObject<List<GLogData>>(recieve);
-                            foreach (var data in ListData)
-                            {
-                                DateTime inputDate = Function.ParseDateTimes(data.Time);
-                                if (fromDate.Date <= inputDate.Date && inputDate.Date <= toDate.Date && data.Result.Equals("Granted"))
-                                {
-                                    var enrollName = "";
-                                    var dr = dt.NewRow();
-                                    dr["MachineNo"] = machineNumber;
-                                    dr["EnrollNo"] = int.Parse(data.ID);
-                                    dr["EnrollName"] = enrollName;
-                                    dr["DateTimeRecord"] = inputDate.ToString();
-                                    dr["Source"] = data.vDoorMode;
-                                    dr["ClockDate"] = inputDate.Date;
-
-                                    dt.Rows.Add(dr);
-                                }
-                            }
-                        }
-                    }
-                    STW.Close();
-                    STR.Close();
-                    client.Close();
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Client disconnect!");
-                    return dt;
-                }
-                else
-                {
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Client did not connect!");
+                    var dr = dt.NewRow();
+                    dr["MachineNo"] = machineNumber;
+                    dr["EnrollNo"] = int.Parse(data.ID);
+                    dr["EnrollName"] = "";
+                    dr["DateTimeRecord"] = inputDate.ToString();
+                    dr["Source"] = data.vDoorMode;
+                    dr["ClockDate"] = inputDate.Date;
+                    dt.Rows.Add(dr);
                 }
             }
-            catch (Exception ex)
-            {
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
-            }
-            return new DataTable();
 
+            return dt;
         }
 
         [HttpGet]
         public DataTable GetAllUserTable(int machineNumber, string ip, int port)
         {
+            DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_OTEM");
+
+            string request = $"{machineNumber}|{ip}|{port}";
+
+            var response = SendRequestToServer(request);
+            if (response == null)
+            {
+                return new DataTable();
+            }
+
+            var glogList = JsonConvert.DeserializeObject<List<GLogData>>(response);
+            if (glogList.Count > 0)
+            {
+                var distinctUsers = glogList
+                    .Where(m => m.Result.Equals("Granted") && m.Method.Equals("by FP"))
+                    .GroupBy(m => m.ID)
+                    .Select(m => m.First())
+                    .ToList();
+
+                foreach (var item in distinctUsers)
+                {
+                    var r = dt.NewRow();
+                    r["MachineNo"] = machineNumber;
+                    r["EnrollNo"] = item.ID;
+                    r["EnrollName"] = "";
+                    dt.Rows.Add(r);
+                }
+            }
+
+            return dt;
+        }
+
+        /// <summary>
+        /// Sends a request to the biometric socket server and returns the response data.
+        /// </summary>
+        /// <param name="request">The request string to send</param>
+        /// <param name="callerName">Auto-populated caller method name for logging</param>
+        /// <returns>The response data string, or null if connection failed</returns>
+        private string SendRequestToServer(string request, [CallerMemberName] string callerName = "")
+        {
             try
             {
-                DataTable dt = UnitOfWork.BusinessMasterData.GetBPTableStructure("APZ_OTEM");
-                Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Start connect to socket server...");
-                var client = new TcpClient();
-                IPEndPoint IpEnd = new IPEndPoint(IPAddress.Parse(Global.BiometricServer), Global.BiometricPort);
-                client.Connect(IpEnd);
-                if (client.Connected)
+                Log(Logging.WATCH, "Start connect to socket server...", callerName);
+
+                var endpoint = new IPEndPoint(IPAddress.Parse(Global.BiometricServer), Global.BiometricPort);
+
+                using (var client = new TcpClient())
                 {
+                    client.Connect(endpoint);
 
-                    var STW = new StreamWriter(client.GetStream());
-                    var STR = new StreamReader(client.GetStream());
-                    STW.AutoFlush = true;
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Connected to socket server!");
-
-                    // 2. send
-                    STW.WriteLine(string.Format("{0}|{1}|{2}", machineNumber, ip, port));
-
-                    // 3. receive
-                    while (client.Connected)
+                    if (!client.Connected)
                     {
-                        var recieve = STR.ReadLine();
+                        Log(Logging.WATCH, "Client did not connect!", callerName);
+                        return null;
+                    }
 
-                        if (recieve.ToUpper() == "EXIT")
+                    Log(Logging.WATCH, "Connected to socket server!", callerName);
+
+                    using (var writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
+                    using (var reader = new StreamReader(client.GetStream()))
+                    {
+                        // Send request
+                        writer.WriteLine(request);
+
+                        // Receive response
+                        while (client.Connected)
                         {
-                            STW.WriteLine("EXIT");
-                            break;
-                        }
-                        else
-                        {
-                            Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "recieved data!");
-                            var glogList = JsonConvert.DeserializeObject<List<GLogData>>(recieve);
-                            if (glogList.Count > 0)
+                            var response = reader.ReadLine();
+
+                            if (string.IsNullOrEmpty(response) || response.ToUpper() == "EXIT")
                             {
-                                var newLst = glogList.GroupBy(m => m.ID).Select(m => m.First()).Distinct().Where(m => m.Result.Equals("Granted") && m.Method.Equals("by FP")).ToList();
-                                foreach (var item in newLst)
-                                {
-                                    var r = dt.NewRow();
-                                    r["MachineNo"] = machineNumber;
-                                    r["EnrollNo"] = item.ID;
-                                    r["EnrollName"] = "";
-                                    dt.Rows.Add(r);
-                                }
+                                writer.WriteLine("EXIT");
+                                break;
                             }
+
+                            Log(Logging.WATCH, "Received data!", callerName);
+                            Log(Logging.WATCH, "Client disconnect!", callerName);
+                            return response;
                         }
                     }
-                    STW.Close();
-                    STR.Close();
-                    client.Close();
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Client disconnect!");
-                    return dt;
                 }
-                else
-                {
-                    Logging.Write(Logging.WATCH, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), "Client did not connect!");
-                }
+
+                return null;
             }
             catch (Exception ex)
             {
-                Logging.Write(Logging.ERROR, new StackTrace(new StackFrame(0)).ToString().Substring(5, new StackTrace(new StackFrame(0)).ToString().Length - 5), ex.Message);
+                Log(Logging.ERROR, ex.Message, callerName);
+                return null;
             }
-            return new DataTable();
-
         }
 
+        /// <summary>
+        /// Helper method for consistent logging format.
+        /// </summary>
+        private static void Log(string level, string message, string callerName)
+        {
+            Logging.Write(level, callerName, message);
+        }
     }
 }
