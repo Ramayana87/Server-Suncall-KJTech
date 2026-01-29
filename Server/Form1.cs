@@ -173,7 +173,7 @@ namespace Server
                     if (parameters.Count > 0)
                     {
                         string firstParam = SafeToString(parameters[0]).ToUpper();
-                        if (firstParam == "GETLOGS" || firstParam == "GETUSERS" || 
+                        if (firstParam == "GETLOGS" || firstParam == "GETUSERS" ||
                             firstParam == "MOCKUP_GETLOGS" || firstParam == "MOCKUP_GETUSERS")
                         {
                             operation = firstParam;
@@ -220,7 +220,7 @@ namespace Server
                                 stopwatch.Stop();
                                 Logging.Write(Logging.ERROR, "MOCKUP_GETUSERS", ex.Message);
                                 AppendLog($"[MOCKUP_GETUSERS] Error: {ex.Message}");
-                                
+
                                 // Send empty result to prevent client timeout
                                 writer.WriteLine("[]");
                                 writer.WriteLine("EXIT");
@@ -268,7 +268,7 @@ namespace Server
                                 stopwatch.Stop();
                                 Logging.Write(Logging.ERROR, "MOCKUP_GETLOGS", ex.Message);
                                 AppendLog($"[MOCKUP_GETLOGS] Error: {ex.Message}");
-                                
+
                                 // Send empty result to prevent client timeout
                                 writer.WriteLine("[]");
                                 writer.WriteLine("EXIT");
@@ -449,8 +449,6 @@ namespace Server
             catch (ObjectDisposedException)
             {
                 // Control was disposed during invocation, ignore
-            }
-        }
             }
         }
 
@@ -663,7 +661,7 @@ namespace Server
                 AppendLog($"[MOCKUP_GETLOGS] Reading file: {fileName}");
                 var lines = File.ReadAllLines(filePath);
                 AppendLog($"[MOCKUP_GETLOGS] File loaded: {lines.Length} lines, processing...");
-                
+
                 int recordNumber = 1;
                 int totalRecords = 0;
                 int filteredRecords = 0;
