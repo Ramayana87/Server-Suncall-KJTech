@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
@@ -58,7 +59,7 @@ namespace Server
         {
             lock (_cacheLock)
             {
-                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                var stopwatch = Stopwatch.StartNew();
 
                 // Check if we need to fetch new data
                 if (NeedToFetchNewData(fromDate, toDate))
