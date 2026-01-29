@@ -125,12 +125,19 @@ namespace Server
                     listener = null;
                 }
 
-                // Only reset buttons if we're actually stopping
-                if (!statusOpen)
+                // Only reset buttons if we're actually stopping and form is not disposed
+                if (!statusOpen && !this.IsDisposed)
                 {
-                    UpdateStatus("Stopped", Color.Gray);
-                    btnStart.Enabled = true;
-                    btnStop.Enabled = false;
+                    try
+                    {
+                        UpdateStatus("Stopped", Color.Gray);
+                        if (!btnStart.IsDisposed) btnStart.Enabled = true;
+                        if (!btnStop.IsDisposed) btnStop.Enabled = false;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Control was disposed, ignore
+                    }
                 }
             }
         }
@@ -320,6 +327,11 @@ namespace Server
 
         private void btnStop_Click(object sender, EventArgs e)
         {
+            StopServer();
+        }
+
+        private void StopServer()
+        {
             try
             {
                 statusOpen = false;
@@ -339,39 +351,106 @@ namespace Server
             {
                 UpdateStatus("Error", Color.Red);
                 AppendLog($"Stop error: {ex.Message}");
-                Logging.Write(Logging.ERROR, "btnStop_Click", ex.Message);
+                Logging.Write(Logging.ERROR, "StopServer", ex.Message);
             }
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            // Check if server is running
+            if (statusOpen && listener != null)
+            {
+                var result = MessageBox.Show(
+                    "Server is currently running. Do you want to stop the server and close the application?",
+                    "Confirm Close",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.No)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                // Stop server before closing
+                StopServer();
+            }
+        }
+
+        private void btnClearLog_Click(object sender, EventArgs e)
+        {
+            txtLogs.Clear();
         }
 
         private void UpdateStatus(string status, Color color)
         {
-            if (lblStatus.InvokeRequired)
+            // Check if control is disposed or disposing to avoid ObjectDisposedException
+            if (lblStatus == null || lblStatus.IsDisposed || this.IsDisposed)
             {
-                lblStatus.Invoke(new Action(() =>
-                {
-                    lblStatus.Text = status;
-                    lblStatus.ForeColor = color;
-                }));
+                return;
             }
-            else
+
+            try
             {
-                lblStatus.Text = status;
-                lblStatus.ForeColor = color;
+                if (lblStatus.InvokeRequired)
+                {
+                    lblStatus.Invoke(new Action(() =>
+                    {
+                        if (!lblStatus.IsDisposed && !this.IsDisposed)
+                        {
+                            lblStatus.Text = status;
+                            lblStatus.ForeColor = color;
+                        }
+                    }));
+                }
+                else
+                {
+                    if (!lblStatus.IsDisposed && !this.IsDisposed)
+                    {
+                        lblStatus.Text = status;
+                        lblStatus.ForeColor = color;
+                    }
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Control was disposed during invocation, ignore
             }
         }
 
         private void AppendLog(string message)
         {
-            if (txtLogs.InvokeRequired)
+            // Check if control is disposed or disposing to avoid ObjectDisposedException
+            if (txtLogs == null || txtLogs.IsDisposed || this.IsDisposed)
             {
-                txtLogs.Invoke(new Action(() =>
-                {
-                    txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
-                }));
+                return;
             }
-            else
+
+            try
             {
-                txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                if (txtLogs.InvokeRequired)
+                {
+                    txtLogs.Invoke(new Action(() =>
+                    {
+                        if (!txtLogs.IsDisposed && !this.IsDisposed)
+                        {
+                            txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                        }
+                    }));
+                }
+                else
+                {
+                    if (!txtLogs.IsDisposed && !this.IsDisposed)
+                    {
+                        txtLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                    }
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Control was disposed during invocation, ignore
+            }
+        }
             }
         }
 
