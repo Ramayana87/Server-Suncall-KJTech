@@ -1,17 +1,16 @@
 ﻿using Apzon.Api.Controllers.Sales;
 using Apzon.Commons;
-using SAPbobsCOM;
-using System;
-using System.Data;
-using System.Net.Sockets;
-using System.Net;
-using System.Web.Http;
 using Apzon.Entities.Models.HumanResources.Biometric;
 using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Web.Http;
 
 namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
 {
@@ -47,29 +46,32 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                 var response = SendRequestToServer(request);
                 if (response == null)
                 {
+                    // ghi log khong thanh cong
+                    Log(Logging.ERROR, "No response from biometric server.");
                     return dt;
                 }
 
                 var logDataList = JsonConvert.DeserializeObject<List<GLogData>>(response);
                 if (logDataList == null)
                 {
+                    Log(Logging.ERROR, "Failed to deserialize log data from biometric server.");
                     return dt;
                 }
 
+                Log(Logging.WATCH, $"Retrieved {logDataList.Count} log entries from biometric server.");
+
+                // bỏ lọc ngày giờ ở đây, để lấy hết log trong khoảng do server đã lọc
                 foreach (var data in logDataList)
                 {
                     DateTime inputDate = Function.ParseDateTimes(data.Time);
-                    if (fromDate.Date <= inputDate.Date && inputDate.Date <= toDate.Date && data.Result.Equals("Granted"))
-                    {
-                        var dr = dt.NewRow();
-                        dr["MachineNo"] = machineNumber;
-                        dr["EnrollNo"] = int.Parse(data.ID);
-                        dr["EnrollName"] = "";
-                        dr["DateTimeRecord"] = inputDate.ToString();
-                        dr["Source"] = data.vDoorMode;
-                        dr["ClockDate"] = inputDate.Date;
-                        dt.Rows.Add(dr);
-                    }
+                    var dr = dt.NewRow();
+                    dr["MachineNo"] = machineNumber;
+                    dr["EnrollNo"] = int.Parse(data.ID);
+                    dr["EnrollName"] = "";
+                    dr["DateTimeRecord"] = inputDate.ToString();
+                    dr["Source"] = data.vDoorMode;
+                    dr["ClockDate"] = inputDate.Date;
+                    dt.Rows.Add(dr);
                 }
 
                 return dt;
@@ -160,6 +162,8 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
                     client.SendTimeout = SEND_TIMEOUT_MS;
 
                     Log(Logging.WATCH, "Connected to socket server!", callerName);
+                    // log request send to server
+                    Log(Logging.WATCH, $"Sending request: {request}", callerName);
 
                     using (var writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
                     using (var reader = new StreamReader(client.GetStream()))
@@ -198,5 +202,6 @@ namespace Apzon.Api.Controllers.HumanResources.TimeSheeting
         {
             Logging.Write(level, callerName, message);
         }
+
     }
 }
